@@ -19,7 +19,7 @@ export default function LoginScreen() {
     }
 
     try {
-      await login(email, password, selectedRole);
+      await login(email, password);
       router.replace(selectedRole === 'admin' ? '/admin' : '/(tabs)');
     } catch (error) {
       Alert.alert('Error', 'Invalid email or password');

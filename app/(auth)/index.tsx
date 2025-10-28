@@ -10,7 +10,7 @@ export default function WelcomeScreen() {
 
   React.useEffect(() => {
     if (user) {
-      router.replace('/(tabs)/');
+      router.replace('/');
     }
   }, [user]);
 

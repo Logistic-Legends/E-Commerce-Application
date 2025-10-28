@@ -1,6 +1,6 @@
 import { View, Text, ScrollView, StyleSheet, TextInput, TouchableOpacity, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Picker } from '@react-native-picker/picker';
+import { CustomPicker } from '@/components/CustomPicker';
 import { useState } from 'react';
 
 export default function GeneralSettings() {
@@ -72,19 +72,17 @@ export default function GeneralSettings() {
         <Text style={styles.sectionTitle}>Currency Setup</Text>
         <View style={styles.formGroup}>
           <Text style={styles.label}>Default Currency</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={currency}
-              onValueChange={(itemValue) => setCurrency(itemValue)}
-              style={styles.picker}
-            >
-              <Picker.Item label="Bangladeshi Taka (BDT)" value="BDT" />
-              <Picker.Item label="US Dollar (USD)" value="USD" />
-              <Picker.Item label="Euro (EUR)" value="EUR" />
-              <Picker.Item label="British Pound (GBP)" value="GBP" />
-              <Picker.Item label="Indian Rupee (INR)" value="INR" />
-            </Picker>
-          </View>
+          <CustomPicker
+            items={[
+              { label: 'Bangladeshi Taka (BDT)', value: 'BDT' },
+              { label: 'US Dollar (USD)', value: 'USD' },
+              { label: 'Euro (EUR)', value: 'EUR' },
+              { label: 'British Pound (GBP)', value: 'GBP' },
+              { label: 'Indian Rupee (INR)', value: 'INR' },
+            ]}
+            selectedValue={currency}
+            onValueChange={(itemValue) => setCurrency(itemValue)}
+          />
         </View>
       </View>
 
@@ -92,33 +90,29 @@ export default function GeneralSettings() {
         <Text style={styles.sectionTitle}>Language & Timezone</Text>
         <View style={styles.formGroup}>
           <Text style={styles.label}>Language</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={language}
-              onValueChange={(itemValue) => setLanguage(itemValue)}
-              style={styles.picker}
-            >
-              <Picker.Item label="English" value="en" />
-              <Picker.Item label="বাংলা" value="bn" />
-              <Picker.Item label="हिंदी" value="hi" />
-              <Picker.Item label="Español" value="es" />
-            </Picker>
-          </View>
+          <CustomPicker
+            items={[
+              { label: 'English', value: 'en' },
+              { label: 'বাংলা', value: 'bn' },
+              { label: 'हिंदी', value: 'hi' },
+              { label: 'Español', value: 'es' },
+            ]}
+            selectedValue={language}
+            onValueChange={(itemValue) => setLanguage(itemValue)}
+          />
         </View>
         <View style={styles.formGroup}>
           <Text style={styles.label}>Timezone</Text>
-          <View style={styles.pickerContainer}>
-            <Picker
-              selectedValue={timezone}
-              onValueChange={(itemValue) => setTimezone(itemValue)}
-              style={styles.picker}
-            >
-              <Picker.Item label="Asia/Dhaka (GMT+6)" value="Asia/Dhaka" />
-              <Picker.Item label="UTC (GMT+0)" value="UTC" />
-              <Picker.Item label="America/New_York (GMT-5)" value="America/New_York" />
-              <Picker.Item label="Europe/London (GMT+0/+1)" value="Europe/London" />
-            </Picker>
-          </View>
+          <CustomPicker
+            items={[
+              { label: 'Asia/Dhaka (GMT+6)', value: 'Asia/Dhaka' },
+              { label: 'UTC (GMT+0)', value: 'UTC' },
+              { label: 'America/New_York (GMT-5)', value: 'America/New_York' },
+              { label: 'Europe/London (GMT+0/+1)', value: 'Europe/London' },
+            ]}
+            selectedValue={timezone}
+            onValueChange={(itemValue) => setTimezone(itemValue)}
+          />
         </View>
       </View>
 

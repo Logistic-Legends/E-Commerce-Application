@@ -32,7 +32,7 @@ export default function WishlistScreen() {
           <Text style={styles.emptySubtitle}>Save items you love for later</Text>
           <TouchableOpacity
             style={styles.shopButton}
-            onPress={() => router.push('/(tabs)/')}
+            onPress={() => router.push('/')}
           >
             <Text style={styles.shopButtonText}>Start Shopping</Text>
           </TouchableOpacity>

@@ -625,7 +625,7 @@ export default function ProfileScreen() {
                   
                   <TouchableOpacity 
                     style={styles.privacyAction}
-                    onPress={() => router.push('/(tabs)/settings/privacy-policy')}
+                    onPress={() => router.push('/settings/privacy-policy')}
                   >
                     <FileText size={20} color="#3B82F6" />
                     <Text style={styles.privacyActionText}>View Privacy Policy</Text>
@@ -634,7 +634,7 @@ export default function ProfileScreen() {
                   
                   <TouchableOpacity 
                     style={styles.privacyAction}
-                    onPress={() => router.push('/(tabs)/settings/data-usage')}
+                    onPress={() => router.push('/settings/data-usage')}
                   >
                     <Database size={20} color="#10B981" />
                     <Text style={styles.privacyActionText}>Data Usage</Text>
