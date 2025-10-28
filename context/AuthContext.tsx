@@ -15,8 +15,8 @@ interface User {
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  register: (email: string, password: string, name: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<User>;
+  register: (email: string, password: string, name: string) => Promise<User>;
   logout: () => void;
   isAuthenticated: boolean;
 }
@@ -61,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<User> => {
     setIsLoading(true);
     try {
       // Mock login - works without backend
@@ -89,6 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
       setUser(userData);
       
+      return userData;
+      
       // Uncomment below for real API when backend is ready
       /*
       const response = await apiClient.post(API_ENDPOINTS.AUTH.LOGIN, {
@@ -106,13 +108,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       */
     } catch (error: any) {
       console.error('Login error:', error);
+      setIsLoading(false);
       throw new Error(error.message || 'Invalid credentials');
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (email: string, password: string, name: string) => {
+  const register = async (email: string, password: string, name: string): Promise<User> => {
     setIsLoading(true);
     try {
       // Mock registration - works without backend
@@ -133,6 +136,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await AsyncStorage.setItem('userData', JSON.stringify(userData));
       setUser(userData);
       
+      return userData;
+      
       // Uncomment below for real API when backend is ready
       /*
       const response = await apiClient.post(API_ENDPOINTS.AUTH.REGISTER, {
@@ -151,6 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       */
     } catch (error: any) {
       console.error('Registration error:', error);
+      setIsLoading(false);
       throw new Error(error.message || 'Registration failed');
     } finally {
       setIsLoading(false);

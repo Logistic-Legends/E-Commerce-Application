@@ -19,8 +19,13 @@ export default function LoginScreen() {
     }
 
     try {
-      await login(email, password);
-      router.replace(selectedRole === 'admin' ? '/admin' : '/(tabs)');
+      const userData = await login(email, password);
+      // Redirect based on actual user role
+      if (userData.role === 'admin') {
+        router.replace('/admin');
+      } else {
+        router.replace('/(tabs)');
+      }
     } catch (error) {
       Alert.alert('Error', 'Invalid email or password');
     }
