@@ -35,15 +35,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const loadUser = async () => {
     try {
       const token = await AsyncStorage.getItem('userToken');
+      const userDataString = await AsyncStorage.getItem('userData');
+      
+      if (token && userDataString) {
+        // Load from stored data (mock mode)
+        const userData = JSON.parse(userDataString);
+        setUser(userData);
+      }
+      
+      // Uncomment below for real API when backend is ready
+      /*
       if (token) {
         const response = await apiClient.get(API_ENDPOINTS.AUTH.ME, token);
         if (response.success) {
           setUser({ ...response.data, token });
         }
       }
+      */
     } catch (error) {
       console.error('Error loading user:', error);
       await AsyncStorage.removeItem('userToken');
+      await AsyncStorage.removeItem('userData');
     } finally {
       setIsLoading(false);
     }
@@ -52,6 +64,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     setIsLoading(true);
     try {
+      // Mock login - works without backend
+      // Check for demo accounts
+      let role: 'user' | 'admin' | 'seller' = 'user';
+      
+      if (email === 'admin@test.com' && password === 'admin123') {
+        role = 'admin';
+      } else if (email === 'user@test.com' && password === 'user123') {
+        role = 'user';
+      } else if (!email || !password) {
+        throw new Error('Please enter email and password');
+      }
+      
+      // Create mock user data
+      const userData: User = {
+        _id: Math.random().toString(36).substr(2, 9),
+        email: email,
+        name: email.split('@')[0],
+        role: role,
+        token: 'mock-token-' + Math.random().toString(36).substr(2, 9),
+      };
+      
+      await AsyncStorage.setItem('userToken', userData.token);
+      await AsyncStorage.setItem('userData', JSON.stringify(userData));
+      setUser(userData);
+      
+      // Uncomment below for real API when backend is ready
+      /*
       const response = await apiClient.post(API_ENDPOINTS.AUTH.LOGIN, {
         email,
         password,
@@ -64,6 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         throw new Error(response.message || 'Login failed');
       }
+      */
     } catch (error: any) {
       console.error('Login error:', error);
       throw new Error(error.message || 'Invalid credentials');
@@ -75,6 +115,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (email: string, password: string, name: string) => {
     setIsLoading(true);
     try {
+      // Mock registration - works without backend
+      if (!email || !password || !name) {
+        throw new Error('Please fill in all fields');
+      }
+      
+      // Create mock user data
+      const userData: User = {
+        _id: Math.random().toString(36).substr(2, 9),
+        email: email,
+        name: name,
+        role: 'user',
+        token: 'mock-token-' + Math.random().toString(36).substr(2, 9),
+      };
+      
+      await AsyncStorage.setItem('userToken', userData.token);
+      await AsyncStorage.setItem('userData', JSON.stringify(userData));
+      setUser(userData);
+      
+      // Uncomment below for real API when backend is ready
+      /*
       const response = await apiClient.post(API_ENDPOINTS.AUTH.REGISTER, {
         email,
         password,
@@ -88,6 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } else {
         throw new Error(response.message || 'Registration failed');
       }
+      */
     } catch (error: any) {
       console.error('Registration error:', error);
       throw new Error(error.message || 'Registration failed');
@@ -99,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = async () => {
     try {
       await AsyncStorage.removeItem('userToken');
+      await AsyncStorage.removeItem('userData');
       setUser(null);
     } catch (error) {
       console.error('Logout error:', error);
