@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Image, Modal, Animated } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Image, Modal, Animated, Alert } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL, resolveUrl } from '../../config/api';
 import { Plus, Search, Edit2, Trash2, Image as ImageIcon, X, ChevronDown } from 'lucide-react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { useProducts } from '@/context/ProductContext';
+import { categoryService, subcategoryService } from '@/lib/supabase-services';
+import { supabase } from '@/lib/supabase';
 
 interface Category {
   id: string;
@@ -47,8 +51,8 @@ const initialCategories: Category[] = [
 
 
 export default function ProductManagement() {
-  const { products, addProduct, updateProduct, deleteProduct } = useProducts();
-  const [categories, setCategories] = useState<Category[]>(initialCategories);
+  const { products, addProduct, updateProduct, deleteProduct, refreshProducts } = useProducts();
+  const [categories, setCategories] = useState<Category[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalVisible, setIsAddModalVisible] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<AdminProduct | null>(null);
@@ -94,82 +98,479 @@ export default function ProductManagement() {
     category: '',
     subcategory: '',
     price: '',
+    cogs: '',
     discountPrice: '',
+    discountPercentage: '',
+    discountType: 'amount' as 'amount' | 'percentage',
     stock: '',
     description: '',
     image: '',
   });
 
-  const handleImagePick = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 1,
-    });
+  // Variants state for colors and sizes
+  const [variants, setVariants] = useState<{
+    colors: { name: string; stock: number }[];
+    sizes: { name: string; stock: number }[];
+  }>({
+    colors: [],
+    sizes: [],
+  });
 
-    if (!result.canceled) {
-      setFormData({ ...formData, image: result.assets[0].uri });
+  const [newColor, setNewColor] = useState('');
+  const [newSize, setNewSize] = useState('');
+  const [sizeType, setSizeType] = useState<'preset' | 'measurement'>('preset');
+  const presetSizes = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+
+  // Fetch categories from backend
+  const fetchCategories = async () => {
+    try {
+      const categoriesData = await categoryService.getAll();
+      const allSubcategories = await subcategoryService.getAll();
+      
+      if (categoriesData) {
+        const formattedCategories: Category[] = categoriesData.map((cat: any) => ({
+          id: cat.id,
+          name: cat.name,
+          description: cat.description,
+          subcategories: allSubcategories
+            .filter((sub: any) => sub.category_id === cat.id)
+            .map((sub: any) => ({
+              id: sub.id,
+              name: sub.name,
+              description: sub.description,
+            })) || [],
+        }));
+        setCategories(formattedCategories);
+      }
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      // Fallback to initial categories if fetch fails
+      setCategories(initialCategories);
     }
   };
 
-  const handleAddProduct = () => {
-    const price = parseFloat(formData.price);
-    const discountPrice = formData.discountPrice ? parseFloat(formData.discountPrice) : undefined;
+  // Load categories on mount
+  useEffect(() => {
+    fetchCategories();
+  }, []);
 
-    // Validate discount price
-    if (discountPrice && discountPrice >= price) {
-      alert('Discount price must be less than the regular price');
+  // Add color variant
+  const handleAddColor = () => {
+    if (newColor.trim()) {
+      setVariants({
+        ...variants,
+        colors: [...variants.colors, { name: newColor.trim(), stock: 0 }],
+      });
+      setNewColor('');
+    }
+  };
+
+  // Remove color variant
+  const handleRemoveColor = (index: number) => {
+    setVariants({
+      ...variants,
+      colors: variants.colors.filter((_, i) => i !== index),
+    });
+  };
+
+  // Add size variant
+  const handleAddSize = () => {
+    if (newSize.trim()) {
+      setVariants({
+        ...variants,
+        sizes: [...variants.sizes, { name: newSize.trim(), stock: 0 }],
+      });
+      setNewSize('');
+    }
+  };
+
+  // Add preset size
+  const handleAddPresetSize = (size: string) => {
+    if (!variants.sizes.find(s => s.name === size)) {
+      setVariants({
+        ...variants,
+        sizes: [...variants.sizes, { name: size, stock: 0 }],
+      });
+    }
+  };
+
+  // Remove size variant
+  const handleRemoveSize = (index: number) => {
+    setVariants({
+      ...variants,
+      sizes: variants.sizes.filter((_, i) => i !== index),
+    });
+  };
+
+  const uploadImageToSupabase = async (uri: string): Promise<string> => {
+    try {
+      console.log('📤 Uploading image to Supabase Storage...');
+      
+      // Get file extension
+      const ext = uri.split('.').pop()?.toLowerCase() || 'jpg';
+      const fileName = `product_${Date.now()}.${ext}`;
+      
+      console.log('📁 File name:', fileName);
+      
+      // Read file as base64
+      const base64 = await FileSystem.readAsStringAsync(uri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      
+      console.log('📦 Base64 length:', base64.length);
+      
+      // Convert base64 to ArrayBuffer
+      const arrayBuffer = decode(base64);
+      
+      console.log('📦 ArrayBuffer size:', arrayBuffer.byteLength, 'bytes');
+      
+      // Upload to Supabase Storage
+      const { data, error } = await supabase.storage
+        .from('products')
+        .upload(fileName, arrayBuffer, {
+          contentType: `image/${ext}`,
+          upsert: false
+        });
+      
+      if (error) {
+        console.error('❌ Supabase Storage error:', error);
+        throw error;
+      }
+      
+      console.log('✅ Upload successful, getting public URL...');
+      
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('products')
+        .getPublicUrl(fileName);
+      
+      console.log('✅ Public URL:', publicUrl);
+      return publicUrl;
+    } catch (error: any) {
+      console.error('❌ Error uploading image:', error);
+      // If storage bucket doesn't exist, show helpful error
+      if (error.message?.includes('not found') || error.message?.includes('bucket')) {
+        throw new Error('Storage bucket "products" not found. Please create it in Supabase Dashboard (Storage → New bucket → name: "products" → Public)');
+      }
+      throw error;
+    }
+  };
+
+  const handleImagePick = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.7,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
+        
+        try {
+          console.log('📸 Image selected, starting upload...');
+          
+          // Get file info
+          const uri = asset.uri;
+          const fileName = `product-${Date.now()}.jpg`;
+          const filePath = `products/${fileName}`;
+          console.log('📁 File path:', filePath);
+          
+          // Show uploading alert
+          Alert.alert('Uploading', 'Please wait while we upload your image...');
+          
+          // Fetch the image file
+          console.log('⬇️ Fetching image from URI...');
+          const response = await fetch(uri);
+          const blob = await response.blob();
+          console.log('✅ Blob created, size:', blob.size);
+          
+          // Convert blob to ArrayBuffer
+          console.log('🔄 Converting to ArrayBuffer...');
+          const arrayBuffer = await new Promise<ArrayBuffer>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as ArrayBuffer);
+            reader.onerror = reject;
+            reader.readAsArrayBuffer(blob);
+          });
+          console.log('✅ ArrayBuffer ready, size:', arrayBuffer.byteLength);
+          
+          // Upload to Supabase Storage (public bucket, no auth needed)
+          console.log('☁️ Uploading to Supabase...');
+          const { data, error } = await supabase.storage
+            .from('product-images')
+            .upload(filePath, arrayBuffer, {
+              contentType: 'image/jpeg',
+              upsert: false
+            });
+          
+          if (error) {
+            console.error('❌ Supabase upload error:', error);
+            Alert.alert('Upload Failed', error.message || 'Failed to upload image. Please try again.');
+            return;
+          }
+          
+          console.log('✅ Upload successful!', data);
+          
+          // Get public URL
+          const { data: publicUrlData } = supabase.storage
+            .from('product-images')
+            .getPublicUrl(filePath);
+          
+          const publicUrl = publicUrlData.publicUrl;
+          console.log('🔗 Public URL:', publicUrl);
+          
+          // Update form with the uploaded image URL
+          setFormData({ ...formData, image: publicUrl });
+          
+          Alert.alert('Success', 'Image uploaded successfully!');          Alert.alert('Success', 'Image uploaded successfully!');
+          
+        } catch (uploadError) {
+          console.error('❌ Upload process error:', uploadError);
+          Alert.alert('Error', 'Failed to upload image. Please check your connection and try again.');
+        }
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to pick image. Please try again.');
+    }
+  };
+
+  const handleAddProduct = async () => {
+    // Validation
+    if (!formData.name || !formData.category || !formData.price || !formData.stock) {
+      Alert.alert('Error', 'Please fill in all required fields');
       return;
     }
 
-    const newProduct = {
-      id: selectedProduct?.id || Date.now().toString(),
-      name: formData.name,
-      category: formData.category,
-      subcategory: formData.subcategory,
-      price,
-      originalPrice: discountPrice ? price : undefined,
-      discountPrice,
-      stock: parseInt(formData.stock),
-      images: [formData.image || 'https://via.placeholder.com/100'],
-      description: formData.description,
-      rating: 4.5,
-      reviews: 0,
-      isNew: true,
-    };
+    const price = parseFloat(formData.price);
+    let discountPrice: number | undefined;
 
-    if (selectedProduct) {
-      updateProduct(selectedProduct.id, newProduct);
-    } else {
-      addProduct(newProduct);
+    // Calculate discount based on type
+    if (formData.discountType === 'amount' && formData.discountPrice) {
+      discountPrice = parseFloat(formData.discountPrice);
+      // Validate discount price
+      if (discountPrice >= price) {
+        Alert.alert('Error', 'Discount price must be less than the regular price');
+        return;
+      }
+    } else if (formData.discountType === 'percentage' && formData.discountPercentage) {
+      const percentage = parseFloat(formData.discountPercentage);
+      if (percentage <= 0 || percentage >= 100) {
+        Alert.alert('Error', 'Discount percentage must be between 0 and 100');
+        return;
+      }
+      discountPrice = price - (price * percentage / 100);
     }
-    setFormData({
-      name: '',
-      category: '',
-      subcategory: '',
-      price: '',
-      discountPrice: '',
-      stock: '',
-      description: '',
-      image: '',
-    });
-    setIsAddModalVisible(false);
-    setSelectedProduct(null);
+
+    // Build variants array for backend
+    const productVariants = [];
+    for (const color of variants.colors) {
+      for (const size of variants.sizes) {
+        productVariants.push({
+          size: size.name,
+          color: color.name,
+          stock: size.stock || 0,
+          sku: `${formData.name.substring(0, 3).toUpperCase()}-${color.name}-${size.name}`.replace(/\s/g, '')
+        });
+      }
+    }
+    
+    // If only colors, no sizes
+    if (variants.colors.length > 0 && variants.sizes.length === 0) {
+      for (const color of variants.colors) {
+        productVariants.push({
+          color: color.name,
+          stock: color.stock || 0,
+          sku: `${formData.name.substring(0, 3).toUpperCase()}-${color.name}`.replace(/\s/g, '')
+        });
+      }
+    }
+    
+    // If only sizes, no colors
+    if (variants.sizes.length > 0 && variants.colors.length === 0) {
+      for (const size of variants.sizes) {
+        productVariants.push({
+          size: size.name,
+          stock: size.stock || 0,
+          sku: `${formData.name.substring(0, 3).toUpperCase()}-${size.name}`.replace(/\s/g, '')
+        });
+      }
+    }
+
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const userDataStr = await AsyncStorage.getItem('user');
+      const userData = userDataStr ? JSON.parse(userDataStr) : null;
+      
+      const productData: any = {
+        name: formData.name.trim(),
+        regularPrice: parseFloat(price.toFixed(2)),
+        discountPrice: discountPrice ? parseFloat(discountPrice.toFixed(2)) : null,
+        cogs: formData.cogs ? parseFloat(formData.cogs) : 0,
+        description: (formData.description || '').trim(),
+        category: formData.category.trim(),
+        brand: formData.subcategory ? formData.subcategory.trim() : '',
+        images: [formData.image || 'https://via.placeholder.com/400'],
+        variants: productVariants,
+        availableSizes: variants.sizes.map(s => s.name),
+        availableColors: variants.colors.map(c => c.name),
+        totalStock: parseInt(formData.stock) || 0,
+        specifications: {},
+        isActive: true,
+        featured: false,
+        userId: userData?.id // for activity logging
+      };
+
+      console.log('📦 Product data to send:', JSON.stringify(productData, null, 2));
+      console.log('🖼️ Image URL being saved:', productData.images[0]);
+      
+      if (!token) {
+        Alert.alert('Error', 'Please login again');
+        return;
+      }
+
+      // TODO: Implement image upload with Supabase Storage
+      // For now, replace local images with placeholder
+      const isLocalImage = productData.images[0] && !productData.images[0].startsWith('http');
+      if (isLocalImage) {
+        productData.images[0] = 'https://via.placeholder.com/400';
+        console.log('ℹ️ Local image replaced with placeholder');
+      }
+
+      // Use Supabase to save product
+      if (selectedProduct) {
+        // Update existing product
+        const { data, error } = await supabase
+          .from('products')
+          .update({
+            name: productData.name,
+            regular_price: productData.regularPrice,
+            discount_price: productData.discountPrice,
+            cogs: productData.cogs,
+            description: productData.description,
+            category: productData.category,
+            brand: productData.brand,
+            images: productData.images,
+            available_sizes: productData.availableSizes,
+            available_colors: productData.availableColors,
+            total_stock: productData.totalStock,
+            specifications: productData.specifications,
+            is_active: productData.isActive,
+            featured: productData.featured,
+          })
+          .eq('id', selectedProduct.id)
+          .select()
+          .single();
+
+        if (error) throw error;
+        console.log('✅ Product updated successfully');
+      } else {
+        // Create new product
+        console.log('🚀 Creating new product with Supabase');
+        
+        const { data, error } = await supabase
+          .from('products')
+          .insert([{
+            name: productData.name,
+            regular_price: productData.regularPrice,
+            discount_price: productData.discountPrice,
+            cogs: productData.cogs,
+            description: productData.description,
+            category: productData.category,
+            brand: productData.brand,
+            images: productData.images,
+            available_sizes: productData.availableSizes,
+            available_colors: productData.availableColors,
+            total_stock: productData.totalStock,
+            specifications: productData.specifications,
+            is_active: productData.isActive,
+            featured: productData.featured,
+          }])
+          .select()
+          .single();
+
+        if (error) throw error;
+        console.log('✅ Product created successfully:', data);
+      }
+
+      Alert.alert(
+        'Success', 
+        selectedProduct 
+          ? 'Product updated successfully!' 
+          : 'Product added successfully! It will now appear in the user section.'
+      );
+      
+      // Immediately refresh products list to show the new/updated product
+      console.log('🔄 Immediately refreshing products list...');
+      try {
+        await refreshProducts();
+        console.log('✅ Products list refreshed successfully');
+      } catch (refreshError) {
+        console.warn('⚠️ Auto-refresh failed, polling will pick it up:', refreshError);
+      }
+      
+      // Reset form
+      setFormData({
+        name: '',
+        category: '',
+        subcategory: '',
+        price: '',
+        cogs: '',
+        discountPrice: '',
+        discountPercentage: '',
+        discountType: 'amount',
+        stock: '',
+        description: '',
+        image: '',
+      });
+      setVariants({ colors: [], sizes: [] });
+      setIsAddModalVisible(false);
+      setSelectedProduct(null);
+    } catch (error: any) {
+      console.error('Error saving product:', error);
+      Alert.alert('Error', error.message || 'Failed to save product');
+    }
   };
 
   const handleEditProduct = (product: any) => {
     setSelectedProduct(product);
+    
+    // Get the actual regular price (originalPrice if discount exists, otherwise price)
+    const regularPrice = product.originalPrice || product.price;
+    const discountedPrice = product.discountPrice;
+    
+    // Calculate discount percentage if discount exists
+    let discountPercentage = '';
+    if (discountedPrice && regularPrice) {
+      const percentage = ((regularPrice - discountedPrice) / regularPrice) * 100;
+      discountPercentage = percentage.toFixed(2);
+    }
+    
+    // Extract variants from product
+    const colorVariants = product.variants?.filter((v: any) => v.name === 'Color').map((v: any) => ({ name: v.value, stock: v.stock || 0 })) || [];
+    const sizeVariants = product.variants?.filter((v: any) => v.name === 'Size').map((v: any) => ({ name: v.value, stock: v.stock || 0 })) || [];
+    
     setFormData({
       name: product.name,
       category: product.category,
       subcategory: product.subcategory,
-      price: product.price.toString(),
-      discountPrice: product.discountPrice?.toString() || '',
+      price: regularPrice.toString(),
+      cogs: product.cogs?.toString() || '0',
+      discountPrice: discountedPrice?.toString() || '',
+      discountPercentage: discountPercentage,
+      discountType: 'amount',
       stock: product.stock.toString(),
       description: product.description || '',
       image: product.images?.[0] || product.image || '',
     });
+    
+    setVariants({
+      colors: colorVariants,
+      sizes: sizeVariants,
+    });
+    
     setIsAddModalVisible(true);
   };
 
@@ -177,37 +578,59 @@ export default function ProductManagement() {
     deleteProduct(productId);
   };
 
-  const handleAddCategory = () => {
+  const handleAddCategory = async () => {
     if (!newCategoryName.trim()) return;
     
-    const newCategory: Category = {
-      id: Date.now().toString(),
-      name: newCategoryName.trim(),
-      subcategories: []
-    };
-    
-    setCategories([...categories, newCategory]);
-    setNewCategoryName('');
-    setIsAddCategoryModalVisible(false);
+    try {
+      // Create category using Supabase
+      const newCategory = await categoryService.create({
+        name: newCategoryName.trim(),
+        description: `${newCategoryName.trim()} products`,
+      });
+      
+      if (!newCategory) {
+        throw new Error('Failed to create category');
+      }
+      
+      setNewCategoryName('');
+      setIsAddCategoryModalVisible(false);
+      
+      // Refresh categories list
+      await fetchCategories();
+      
+      Alert.alert('Success', 'Category added successfully!');
+    } catch (error: any) {
+      console.error('Error adding category:', error);
+      Alert.alert('Error', error.message || 'Failed to add category. Please try again.');
+    }
   };
 
-  const handleAddSubcategory = () => {
+  const handleAddSubcategory = async () => {
     if (!newSubcategoryName.trim() || !selectedCategoryForSub) return;
     
-    setCategories(prevCategories => prevCategories.map(cat => 
-      cat.id === selectedCategoryForSub 
-        ? {
-            ...cat,
-            subcategories: [...cat.subcategories, {
-              id: Date.now().toString(),
-              name: newSubcategoryName.trim()
-            }]
-          }
-        : cat
-    ));
-    
-    setNewSubcategoryName('');
-    setSelectedCategoryForSub('');
+    try {
+      // Create subcategory using Supabase
+      const newSubcategory = await subcategoryService.create({
+        category_id: selectedCategoryForSub,
+        name: newSubcategoryName.trim(),
+        description: `${newSubcategoryName.trim()} products`,
+      });
+      
+      if (!newSubcategory) {
+        throw new Error('Failed to create subcategory');
+      }
+      
+      setNewSubcategoryName('');
+      setSelectedCategoryForSub('');
+      
+      // Refresh categories list
+      await fetchCategories();
+      
+      Alert.alert('Success', 'Subcategory added successfully!');
+    } catch (error: any) {
+      console.error('Error adding subcategory:', error);
+      Alert.alert('Error', error.message || 'Failed to add subcategory. Please try again.');
+    }
   };
 
   const handleDeleteCategory = (categoryId: string) => {
@@ -251,46 +674,74 @@ export default function ProductManagement() {
     setIsEditCategoryModalVisible(true);
   };
 
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingCategory) return;
     
-    if (editingCategory.type === 'category') {
-      if (!editCategoryForm.categoryName.trim()) return;
+    try {
+      const token = await AsyncStorage.getItem('token');
       
-      setCategories(categories.map(cat => 
-        cat.id === editingCategory.id 
-          ? { 
-              ...cat, 
-              name: editCategoryForm.categoryName.trim(),
+      if (!token) {
+        Alert.alert('Error', 'Please login again');
+        return;
+      }
+      
+      if (editingCategory.type === 'category') {
+        if (!editCategoryForm.categoryName.trim()) return;
+        
+        // Update category via API
+        const response = await fetch(resolveUrl(`/categories/${editingCategory.id}`), {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name: editCategoryForm.categoryName.trim(),
+            description: editCategoryForm.description.trim(),
+            parentId: editCategoryForm.parentId || null,
+          }),
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to update category');
+        }
+      } else {
+        if (!editCategoryForm.subcategoryName.trim()) return;
+        
+        // Update subcategory via API
+        const response = await fetch(
+          resolveUrl(`/categories/${editingCategory.categoryId}/subcategories/${editingCategory.id}`),
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              name: editCategoryForm.subcategoryName.trim(),
               description: editCategoryForm.description.trim(),
-              parentId: editCategoryForm.parentId || undefined
-            }
-          : cat
-      ));
-    } else {
-      if (!editCategoryForm.categoryName.trim() || !editCategoryForm.subcategoryName.trim()) return;
+            }),
+          }
+        );
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to update subcategory');
+        }
+      }
       
-      // Update parent category name
-      setCategories(categories.map(cat => 
-        cat.id === editingCategory.categoryId 
-          ? {
-              ...cat,
-              name: editCategoryForm.categoryName.trim(),
-              subcategories: cat.subcategories.map(sub => 
-                sub.id === editingCategory.id 
-                  ? { 
-                      ...sub, 
-                      name: editCategoryForm.subcategoryName.trim(),
-                      description: editCategoryForm.description.trim()
-                    }
-                  : sub
-              )
-            }
-          : cat
-      ));
+      // Refresh categories list
+      await fetchCategories();
+      
+      handleCancelEdit();
+      Alert.alert('Success', 'Changes saved successfully!');
+    } catch (error: any) {
+      console.error('Error saving changes:', error);
+      Alert.alert('Error', error.message || 'Failed to save changes. Please try again.');
     }
-    
-    handleCancelEdit();
   };
 
   const handleCancelEdit = () => {
@@ -304,24 +755,60 @@ export default function ProductManagement() {
     setIsDeleteConfirmModalVisible(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!deleteTarget) return;
     
-    if (deleteTarget.type === 'category') {
-      setCategories(categories.filter(cat => cat.id !== deleteTarget.id));
-    } else {
-      setCategories(categories.map(cat => 
-        cat.id === deleteTarget.categoryId 
-          ? {
-              ...cat,
-              subcategories: cat.subcategories.filter(sub => sub.id !== deleteTarget.id)
-            }
-          : cat
-      ));
+    try {
+      const token = await AsyncStorage.getItem('token');
+      
+      if (!token) {
+        Alert.alert('Error', 'Please login again');
+        return;
+      }
+      
+      if (deleteTarget.type === 'category') {
+        // Delete category via API
+        const response = await fetch(resolveUrl(`/categories/${deleteTarget.id}`), {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to delete category');
+        }
+      } else {
+        // Delete subcategory via API
+        const response = await fetch(
+          resolveUrl(`/categories/${deleteTarget.categoryId}/subcategories/${deleteTarget.id}`),
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to delete subcategory');
+        }
+      }
+      
+      // Refresh categories list
+      await fetchCategories();
+      
+      setIsDeleteConfirmModalVisible(false);
+      setDeleteTarget(null);
+      Alert.alert('Success', 'Deleted successfully!');
+    } catch (error: any) {
+      console.error('Error deleting:', error);
+      Alert.alert('Error', error.message || 'Failed to delete. Please try again.');
     }
-    
-    setIsDeleteConfirmModalVisible(false);
-    setDeleteTarget(null);
   };
 
   return (
@@ -374,7 +861,7 @@ export default function ProductManagement() {
                   {product.discountPrice ? (
                     <>
                       <Text style={[styles.productDiscount, { fontSize: 16, color: '#059669' }]}>৳{product.discountPrice.toFixed(2)}</Text>
-                      <Text style={[styles.productPrice, { fontSize: 14, textDecorationLine: 'line-through' }]}>৳{product.price.toFixed(2)}</Text>
+                      <Text style={[styles.productPrice, { fontSize: 14, textDecorationLine: 'line-through', color: '#6B7280' }]}>৳{(product.originalPrice || product.price).toFixed(2)}</Text>
                     </>
                   ) : (
                     <Text style={styles.productPrice}>৳{product.price.toFixed(2)}</Text>
@@ -533,7 +1020,7 @@ export default function ProductManagement() {
               </View>
 
               <View style={[styles.formGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Subcategory</Text>
+                <Text style={styles.label}>Subcategory (Optional)</Text>
                 <TouchableOpacity 
                   style={styles.select}
                   onPress={() => formData.category ? setIsSubcategoryPickerVisible(true) : null}
@@ -599,29 +1086,106 @@ export default function ProductManagement() {
               </View>
             </View>
 
-            <View style={styles.formRow}>
-              <View style={[styles.formGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Price (৳)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.price}
-                  onChangeText={(text) => setFormData({ ...formData, price: text })}
-                  placeholder="0.00"
-                  keyboardType="decimal-pad"
-                />
-              </View>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Selling Price (৳)</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.price}
+                onChangeText={(text) => setFormData({ ...formData, price: text })}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+              />
+            </View>
 
-              <View style={[styles.formGroup, { flex: 1 }]}>
+            {/* Cost of Goods Sold */}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Cost of Goods Sold - COGS (৳)</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.cogs}
+                onChangeText={(text) => setFormData({ ...formData, cogs: text })}
+                placeholder="Enter product cost"
+                keyboardType="decimal-pad"
+              />
+              {formData.price && formData.cogs && parseFloat(formData.price) > 0 && parseFloat(formData.cogs) > 0 && (
+                <Text style={styles.discountInfo}>
+                  💰 Profit Per Unit: ৳{(parseFloat(formData.price) - parseFloat(formData.cogs)).toFixed(2)}
+                  {' '}({(((parseFloat(formData.price) - parseFloat(formData.cogs)) / parseFloat(formData.price)) * 100).toFixed(1)}% margin)
+                </Text>
+              )}
+            </View>
+
+            {/* Discount Type Selector */}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Discount Type</Text>
+              <View style={styles.discountTypeContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.discountTypeButton,
+                    formData.discountType === 'amount' && styles.discountTypeButtonActive
+                  ]}
+                  onPress={() => setFormData({ ...formData, discountType: 'amount', discountPercentage: '' })}
+                >
+                  <Text style={[
+                    styles.discountTypeText,
+                    formData.discountType === 'amount' && styles.discountTypeTextActive
+                  ]}>
+                    Fixed Amount (৳)
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.discountTypeButton,
+                    formData.discountType === 'percentage' && styles.discountTypeButtonActive
+                  ]}
+                  onPress={() => setFormData({ ...formData, discountType: 'percentage', discountPrice: '' })}
+                >
+                  <Text style={[
+                    styles.discountTypeText,
+                    formData.discountType === 'percentage' && styles.discountTypeTextActive
+                  ]}>
+                    Percentage (%)
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Conditional Discount Input */}
+            {formData.discountType === 'amount' ? (
+              <View style={styles.formGroup}>
                 <Text style={styles.label}>Discount Price (৳)</Text>
                 <TextInput
                   style={styles.input}
                   value={formData.discountPrice}
                   onChangeText={(text) => setFormData({ ...formData, discountPrice: text })}
-                  placeholder="0.00"
+                  placeholder="Enter discounted price"
                   keyboardType="decimal-pad"
                 />
+                {formData.price && formData.discountPrice && (
+                  <Text style={styles.discountInfo}>
+                    Discount: ৳{(parseFloat(formData.price) - parseFloat(formData.discountPrice)).toFixed(2)} 
+                    ({(((parseFloat(formData.price) - parseFloat(formData.discountPrice)) / parseFloat(formData.price)) * 100).toFixed(1)}% off)
+                  </Text>
+                )}
               </View>
-            </View>
+            ) : (
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Discount Percentage (%)</Text>
+                <TextInput
+                  style={styles.input}
+                  value={formData.discountPercentage}
+                  onChangeText={(text) => setFormData({ ...formData, discountPercentage: text })}
+                  placeholder="Enter discount percentage"
+                  keyboardType="decimal-pad"
+                />
+                {formData.price && formData.discountPercentage && (
+                  <Text style={styles.discountInfo}>
+                    Final Price: ৳{(parseFloat(formData.price) - (parseFloat(formData.price) * parseFloat(formData.discountPercentage) / 100)).toFixed(2)}
+                    {' '}(Save ৳{(parseFloat(formData.price) * parseFloat(formData.discountPercentage) / 100).toFixed(2)})
+                  </Text>
+                )}
+              </View>
+            )}
 
             <View style={styles.formGroup}>
               <Text style={styles.label}>Stock Quantity</Text>
@@ -632,6 +1196,125 @@ export default function ProductManagement() {
                 placeholder="Enter stock quantity"
                 keyboardType="number-pad"
               />
+            </View>
+
+            {/* Colors Section */}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Colors (Optional)</Text>
+              <View style={styles.variantInputWrapper}>
+                <TextInput
+                  style={styles.input}
+                  value={newColor}
+                  onChangeText={setNewColor}
+                  placeholder="Color name (e.g., Red, Blue)"
+                  onSubmitEditing={handleAddColor}
+                  returnKeyType="done"
+                />
+              </View>
+              {variants.colors.length > 0 && (
+                <View style={styles.variantsList}>
+                  {variants.colors.map((color, index) => (
+                    <View key={index} style={styles.variantChip}>
+                      <Text style={styles.variantChipText}>
+                        {color.name}
+                      </Text>
+                      <TouchableOpacity onPress={() => handleRemoveColor(index)}>
+                        <Text style={styles.variantRemoveText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Sizes Section */}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Sizes (Optional)</Text>
+              
+              {/* Size Type Selector */}
+              <View style={styles.sizeTypeSelector}>
+                <TouchableOpacity
+                  style={[
+                    styles.sizeTypeButton,
+                    sizeType === 'preset' && styles.sizeTypeButtonActive
+                  ]}
+                  onPress={() => setSizeType('preset')}
+                >
+                  <Text style={[
+                    styles.sizeTypeText,
+                    sizeType === 'preset' && styles.sizeTypeTextActive
+                  ]}>
+                    Preset Sizes
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.sizeTypeButton,
+                    sizeType === 'measurement' && styles.sizeTypeButtonActive
+                  ]}
+                  onPress={() => setSizeType('measurement')}
+                >
+                  <Text style={[
+                    styles.sizeTypeText,
+                    sizeType === 'measurement' && styles.sizeTypeTextActive
+                  ]}>
+                    Measurement
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Preset Sizes Buttons */}
+              {sizeType === 'preset' && (
+                <View style={styles.presetSizesContainer}>
+                  {presetSizes.map((size) => (
+                    <TouchableOpacity
+                      key={size}
+                      style={[
+                        styles.presetSizeButton,
+                        variants.sizes.find(s => s.name === size) && styles.presetSizeButtonSelected
+                      ]}
+                      onPress={() => handleAddPresetSize(size)}
+                    >
+                      <Text style={[
+                        styles.presetSizeText,
+                        variants.sizes.find(s => s.name === size) && styles.presetSizeTextSelected
+                      ]}>
+                        {size}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              {/* Custom Measurement Input */}
+              {sizeType === 'measurement' && (
+                <View style={styles.variantInputWrapper}>
+                  <TextInput
+                    style={styles.input}
+                    value={newSize}
+                    onChangeText={setNewSize}
+                    placeholder="Size measurement (e.g., 32, 34, 36)"
+                    onSubmitEditing={handleAddSize}
+                    returnKeyType="done"
+                  />
+                </View>
+              )}
+
+              {/* Selected Sizes List */}
+              {variants.sizes.length > 0 && (
+                <View style={styles.variantsList}>
+                  {variants.sizes.map((size, index) => (
+                    <View key={index} style={styles.variantChip}>
+                      <Text style={styles.variantChipText}>
+                        {size.name}
+                      </Text>
+                      <TouchableOpacity onPress={() => handleRemoveSize(index)}>
+                        <Text style={styles.variantRemoveText}>×</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
             </View>
 
             <View style={styles.formGroup}>
@@ -781,22 +1464,31 @@ export default function ProductManagement() {
                   styles.addButtonGreen,
                   !quickAddSubcategoryName.trim() && styles.submitButtonDisabled
                 ]}
-                onPress={() => {
+                onPress={async () => {
                   if (quickAddSubcategoryName.trim() && selectedCategoryForQuickAdd) {
-                    const newSubcategory = {
-                      id: Date.now().toString(),
-                      name: quickAddSubcategoryName.trim(),
-                    };
-                    
-                    setCategories(prev => prev.map(cat => 
-                      cat.id === selectedCategoryForQuickAdd 
-                        ? { ...cat, subcategories: [...cat.subcategories, newSubcategory] }
-                        : cat
-                    ));
-                    
-                    setIsQuickAddSubcategoryVisible(false);
-                    setQuickAddSubcategoryName('');
-                    setSelectedCategoryForQuickAdd('');
+                    try {
+                      // Create subcategory using Supabase
+                      const newSubcategory = await subcategoryService.create({
+                        category_id: selectedCategoryForQuickAdd,
+                        name: quickAddSubcategoryName.trim(),
+                        description: '',
+                      });
+                      
+                      if (!newSubcategory) {
+                        throw new Error('Failed to create subcategory');
+                      }
+                      
+                      await fetchCategories();
+                      
+                      setIsQuickAddSubcategoryVisible(false);
+                      setQuickAddSubcategoryName('');
+                      setSelectedCategoryForQuickAdd('');
+                      
+                      Alert.alert('Success', 'Subcategory added successfully!');
+                    } catch (error: any) {
+                      console.error('Error adding subcategory:', error);
+                      Alert.alert('Error', error.message || 'Failed to add subcategory');
+                    }
                   }
                 }}
                 disabled={!quickAddSubcategoryName.trim()}
@@ -879,11 +1571,7 @@ export default function ProductManagement() {
                   styles.submitButton,
                   (!selectedCategoryForSub || !newSubcategoryName.trim()) && styles.submitButtonDisabled
                 ]}
-                onPress={() => {
-                  handleAddSubcategory();
-                  setNewSubcategoryName('');
-                  setSelectedCategoryForSub('');
-                }}
+                onPress={handleAddSubcategory}
                 disabled={!selectedCategoryForSub || !newSubcategoryName.trim()}
               >
                 <Text style={styles.submitButtonText}>Add Subcategory</Text>
@@ -1661,6 +2349,125 @@ const styles = StyleSheet.create({
   floatingAddButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+  },
+  discountTypeContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  discountTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+  },
+  discountTypeButtonActive: {
+    borderColor: '#3B82F6',
+    backgroundColor: '#EBF5FF',
+  },
+  discountTypeText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+  },
+  discountTypeTextActive: {
+    color: '#3B82F6',
+    fontFamily: 'Inter-SemiBold',
+  },
+  discountInfo: {
+    fontSize: 13,
+    fontFamily: 'Inter-Regular',
+    color: '#059669',
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  variantInputWrapper: {
+    marginBottom: 8,
+  },
+  variantsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  variantChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#EBF5FF',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 8,
+  },
+  variantChipText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#3B82F6',
+  },
+  variantRemoveText: {
+    fontSize: 20,
+    fontFamily: 'Inter-Bold',
+    color: '#EF4444',
+  },
+  sizeTypeSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  sizeTypeButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#F9FAFB',
+    alignItems: 'center',
+  },
+  sizeTypeButtonActive: {
+    backgroundColor: '#EBF5FF',
+    borderColor: '#3B82F6',
+  },
+  sizeTypeText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+  },
+  sizeTypeTextActive: {
+    color: '#3B82F6',
+    fontFamily: 'Inter-SemiBold',
+  },
+  presetSizesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  presetSizeButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#F9FAFB',
+    minWidth: 50,
+    alignItems: 'center',
+  },
+  presetSizeButtonSelected: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  presetSizeText: {
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+  },
+  presetSizeTextSelected: {
+    color: '#FFFFFF',
     fontFamily: 'Inter-SemiBold',
   },
 });

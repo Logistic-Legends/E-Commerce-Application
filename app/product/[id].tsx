@@ -109,58 +109,118 @@ export default function ProductDetailScreen() {
           </View>
 
           <View style={styles.priceSection}>
-            <Text style={styles.price}>${product.price}</Text>
-            {product.originalPrice && (
-              <Text style={styles.originalPrice}>${product.originalPrice}</Text>
+            {product.discountPrice ? (
+              <>
+                <Text style={styles.price}>৳{product.discountPrice}</Text>
+                <Text style={styles.originalPrice}>৳{product.regularPrice || product.originalPrice || product.price}</Text>
+                {product.discountPercentage && (
+                  <View style={styles.discountBadge}>
+                    <Text style={styles.discountText}>{product.discountPercentage}% OFF</Text>
+                  </View>
+                )}
+              </>
+            ) : (
+              <Text style={styles.price}>৳{product.regularPrice || product.price}</Text>
             )}
           </View>
 
-          {product.colors && (
+          {/* Stock Information */}
+          <View style={styles.stockSection}>
+            {product.totalStock > 0 ? (
+              <Text style={styles.inStockText}>
+                ✅ In Stock ({product.totalStock} available)
+              </Text>
+            ) : (
+              <Text style={styles.outOfStockText}>
+                ❌ Out of Stock
+              </Text>
+            )}
+          </View>
+
+          {(product.colors || product.availableColors) && (product.colors?.length > 0 || product.availableColors?.length > 0) && (
             <View style={styles.optionSection}>
-              <Text style={styles.optionTitle}>Color</Text>
+              <Text style={styles.optionTitle}>Available Colors</Text>
               <View style={styles.colorOptions}>
-                {product.colors.map((color) => (
-                  <TouchableOpacity
-                    key={color}
-                    style={[
-                      styles.colorOption,
-                      selectedColor === color && styles.selectedColorOption
-                    ]}
-                    onPress={() => setSelectedColor(color)}
-                  >
-                    <Text style={[
-                      styles.colorText,
-                      selectedColor === color && styles.selectedColorText
-                    ]}>
-                      {color}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {(product.availableColors || product.colors || []).map((color) => {
+                  const colorVariant = product.variants?.find(v => 
+                    (v.name === 'Color' && v.value === color) || v.color === color
+                  );
+                  const stock = colorVariant?.stock || product.totalStock || 0;
+                  return (
+                    <TouchableOpacity
+                      key={color}
+                      style={[
+                        styles.colorOption,
+                        selectedColor === color && styles.selectedColorOption,
+                        stock === 0 && styles.outOfStockOption
+                      ]}
+                      onPress={() => stock > 0 && setSelectedColor(color)}
+                      disabled={stock === 0}
+                    >
+                      <Text style={[
+                        styles.colorText,
+                        selectedColor === color && styles.selectedColorText,
+                        stock === 0 && styles.outOfStockText
+                      ]}>
+                        {color}
+                      </Text>
+                      {stock > 0 && (
+                        <Text style={styles.stockText}>
+                          ({stock} left)
+                        </Text>
+                      )}
+                      {stock === 0 && (
+                        <Text style={styles.stockText}>
+                          (Out of stock)
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}
 
-          {product.sizes && (
+          {(product.sizes || product.availableSizes) && (product.sizes?.length > 0 || product.availableSizes?.length > 0) && (
             <View style={styles.optionSection}>
-              <Text style={styles.optionTitle}>Size</Text>
+              <Text style={styles.optionTitle}>Available Sizes</Text>
               <View style={styles.sizeOptions}>
-                {product.sizes.map((size) => (
-                  <TouchableOpacity
-                    key={size}
-                    style={[
-                      styles.sizeOption,
-                      selectedSize === size && styles.selectedSizeOption
-                    ]}
-                    onPress={() => setSelectedSize(size)}
-                  >
-                    <Text style={[
-                      styles.sizeText,
-                      selectedSize === size && styles.selectedSizeText
-                    ]}>
-                      {size}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {(product.availableSizes || product.sizes || []).map((size) => {
+                  const sizeVariant = product.variants?.find(v => 
+                    (v.name === 'Size' && v.value === size) || v.size === size
+                  );
+                  const stock = sizeVariant?.stock || product.totalStock || 0;
+                  return (
+                    <TouchableOpacity
+                      key={size}
+                      style={[
+                        styles.sizeOption,
+                        selectedSize === size && styles.selectedSizeOption,
+                        stock === 0 && styles.outOfStockOption
+                      ]}
+                      onPress={() => stock > 0 && setSelectedSize(size)}
+                      disabled={stock === 0}
+                    >
+                      <Text style={[
+                        styles.sizeText,
+                        selectedSize === size && styles.selectedSizeText,
+                        stock === 0 && styles.outOfStockText
+                      ]}>
+                        {size}
+                      </Text>
+                      {stock > 0 && (
+                        <Text style={styles.stockText}>
+                          ({stock} left)
+                        </Text>
+                      )}
+                      {stock === 0 && (
+                        <Text style={styles.stockText}>
+                          (Out of stock)
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
           )}
@@ -262,7 +322,8 @@ const styles = StyleSheet.create({
   priceSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 16,
+    flexWrap: 'wrap',
   },
   price: {
     fontSize: 28,
@@ -275,6 +336,31 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     textDecorationLine: 'line-through',
     marginLeft: 12,
+  },
+  discountBadge: {
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginLeft: 12,
+  },
+  discountText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: 'Inter-SemiBold',
+  },
+  stockSection: {
+    marginBottom: 24,
+  },
+  inStockText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#10B981',
+  },
+  outOfStockText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#EF4444',
   },
   optionSection: {
     marginBottom: 24,
@@ -372,5 +458,19 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
+  },
+  outOfStockOption: {
+    opacity: 0.5,
+    backgroundColor: '#F3F4F6',
+  },
+  outOfStockText: {
+    color: '#9CA3AF',
+    textDecorationLine: 'line-through',
+  },
+  stockText: {
+    fontSize: 11,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    marginTop: 2,
   },
 });

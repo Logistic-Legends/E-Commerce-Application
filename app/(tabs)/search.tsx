@@ -55,7 +55,7 @@ export default function SearchScreen() {
         <Text style={styles.title}>Search Products</Text>
         
         <View style={styles.searchContainer}>
-          <SearchIcon size={20} color="#9CA3AF" style={styles.searchIcon} />
+          <SearchIcon size={18} color="#9CA3AF" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search for products..."
@@ -157,9 +157,9 @@ export default function SearchScreen() {
                   <Text style={styles.reviews}>({product.reviews})</Text>
                 </View>
                 <View style={styles.priceContainer}>
-                  <Text style={styles.price}>${product.price}</Text>
+                  <Text style={styles.price}>৳{product.price}</Text>
                   {product.originalPrice && (
-                    <Text style={styles.originalPrice}>${product.originalPrice}</Text>
+                    <Text style={styles.originalPrice}>৳{product.originalPrice}</Text>
                   )}
                 </View>
               </View>
@@ -193,17 +193,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     marginBottom: 16,
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#111827',
   },
@@ -258,20 +258,20 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingHorizontal: 16,
+    paddingTop: 12,
   },
   resultsText: {
     fontSize: 16,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   productsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 16,
-    paddingBottom: 32,
+    gap: 12,
+    paddingBottom: 0,
   },
   productCard: {
     backgroundColor: '#FFFFFF',

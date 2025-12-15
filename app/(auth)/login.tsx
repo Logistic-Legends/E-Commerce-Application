@@ -3,31 +3,32 @@ import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Modal } fro
 import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
-import { ArrowLeft, User, UserCog } from 'lucide-react-native';
+import { ArrowLeft, User, UserCog, Eye, EyeOff } from 'lucide-react-native';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedRole, setSelectedRole] = useState<'user' | 'admin' | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const { login, isLoading } = useAuth();
   const router = useRouter();
 
   const handleLogin = async () => {
-    if (!selectedRole || !email || !password) {
+    if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
 
     try {
       const userData = await login(email, password);
-      // Redirect based on actual user role
+      // Redirect based on actual user role from database
       if (userData.role === 'admin') {
         router.replace('/admin');
       } else {
         router.replace('/(tabs)');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Invalid email or password');
+    } catch (error: any) {
+      const errorMessage = error.message || 'Invalid email or password';
+      Alert.alert('Login Failed', errorMessage);
     }
   };
 
@@ -40,41 +41,12 @@ export default function LoginScreen() {
       </View>
       
       <View style={styles.content}>
-        {selectedRole && (
-          <View style={styles.titleSection}>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to your account</Text>
-          </View>
-        )}
+        <View style={styles.titleSection}>
+          <Text style={styles.title}>Welcome Back</Text>
+          <Text style={styles.subtitle}>Sign in to your account</Text>
+        </View>
 
-        {!selectedRole ? (
-          <View style={styles.container}>
-            <View style={styles.titleSection}>
-              <Text style={styles.title}>Welcome Back</Text>
-              <Text style={styles.subtitle}>Choose your account type</Text>
-            </View>
-            <View style={styles.bottomButtons}>
-              <TouchableOpacity
-                style={[styles.roleButton, { backgroundColor: '#3B82F6', flex: 1, marginRight: 8 }]}
-                onPress={() => setSelectedRole('user')}
-                disabled={isLoading}
-              >
-                <User size={24} color="#FFFFFF" />
-                <Text style={styles.roleButtonText}>User</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.roleButton, { backgroundColor: '#10B981', flex: 1, marginLeft: 8 }]}
-                onPress={() => setSelectedRole('admin')}
-                disabled={isLoading}
-              >
-                <UserCog size={24} color="#FFFFFF" />
-                <Text style={styles.roleButtonText}>Admin</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : (
-          <>
+        <View style={styles.container}>
             <View style={styles.form}>
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Email</Text>
@@ -90,14 +62,33 @@ export default function LoginScreen() {
 
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Password</Text>
-                <TextInput
-                  style={styles.input}
-                  value={password}
-                  onChangeText={setPassword}
-                  placeholder="Enter your password"
-                  secureTextEntry
-                />
+                <View style={styles.passwordContainer}>
+                  <TextInput
+                    style={styles.passwordInput}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Enter your password"
+                    secureTextEntry={!showPassword}
+                  />
+                  <TouchableOpacity
+                    style={styles.eyeIcon}
+                    onPress={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? (
+                      <EyeOff size={20} color="#6B7280" />
+                    ) : (
+                      <Eye size={20} color="#6B7280" />
+                    )}
+                  </TouchableOpacity>
+                </View>
               </View>
+
+              <TouchableOpacity
+                style={styles.forgotPasswordLink}
+                onPress={() => router.push('/(auth)/forgot-password' as any)}
+              >
+                <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={[styles.loginButton, isLoading && styles.disabledButton]}
@@ -109,15 +100,15 @@ export default function LoginScreen() {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={() => setSelectedRole(null)}
-              >
-                <Text style={styles.cancelButtonText}>Back</Text>
-              </TouchableOpacity>
             </View>
-          </>
-        )}
+          </View>
+
+          <TouchableOpacity
+          style={styles.forgotPasswordButton}
+          onPress={() => router.push('/(auth)/forgot-password')}
+        >
+          <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+        </TouchableOpacity>
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
@@ -239,6 +230,28 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
     backgroundColor: '#F9FAFB',
   },
+  passwordContainer: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    paddingRight: 50,
+    fontSize: 16,
+    fontFamily: 'Inter-Regular',
+    backgroundColor: '#F9FAFB',
+  },
+  eyeIcon: {
+    position: 'absolute',
+    right: 16,
+    padding: 4,
+  },
   loginButton: {
     backgroundColor: '#3B82F6',
     paddingVertical: 16,
@@ -254,6 +267,15 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: 'Inter-SemiBold',
   },
+  forgotPasswordButton: {
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  forgotPasswordText: {
+    color: '#3B82F6',
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+  },
   footer: {
     alignItems: 'center',
     marginTop: 32,
@@ -266,5 +288,14 @@ const styles = StyleSheet.create({
   link: {
     color: '#3B82F6',
     fontFamily: 'Inter-SemiBold',
+  },
+  forgotPasswordLink: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+  },
+  forgotPasswordText: {
+    color: '#3B82F6',
+    fontSize: 14,
+    fontFamily: 'Inter-Medium',
   },
 });

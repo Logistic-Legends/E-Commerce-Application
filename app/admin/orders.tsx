@@ -1,6 +1,11 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Modal, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Modal, ActivityIndicator, RefreshControl, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Package, Eye, Edit2, Calendar, User, CreditCard, Truck, Search, Filter, ChevronDown } from 'lucide-react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_URL, resolveUrl } from '../../config/api';
+import { supabase } from '@/lib/supabase';
+import { useLocalSearchParams } from 'expo-router';
 
 interface OrderItem {
   id: string;
@@ -10,7 +15,8 @@ interface OrderItem {
 }
 
 interface Order {
-  id: string;
+  _id?: string;  // User text ID for backward compatibility
+  id: string;    // Order number for display
   customerName: string;
   customerEmail: string;
   items: OrderItem[];
@@ -20,6 +26,14 @@ interface Order {
   orderStatus: 'Pending' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
   orderDate: string;
   orderTime: string;
+  shippingAddress?: {
+    street: string;
+    city: string;
+    state?: string;
+    zipCode?: string;
+    country?: string;
+    phone?: string;
+  };
 }
 
 const mockOrders: Order[] = [
@@ -70,13 +84,16 @@ const mockOrders: Order[] = [
 ];
 
 export default function OrderManagement() {
-  const [orders, setOrders] = useState<Order[]>(mockOrders);
-  const [filteredOrders, setFilteredOrders] = useState<Order[]>(mockOrders);
+  const params = useLocalSearchParams();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [filteredOrders, setFilteredOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isOrderDetailVisible, setIsOrderDetailVisible] = useState(false);
   const [isStatusUpdateVisible, setIsStatusUpdateVisible] = useState(false);
   const [newOrderStatus, setNewOrderStatus] = useState<Order['orderStatus']>('Pending');
   const [newPaymentStatus, setNewPaymentStatus] = useState<Order['paymentStatus']>('Pending');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Filter and Search States
   const [searchQuery, setSearchQuery] = useState('');
@@ -86,6 +103,146 @@ export default function OrderManagement() {
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('All');
   const [dateFromFilter, setDateFromFilter] = useState('');
   const [dateToFilter, setDateToFilter] = useState('');
+
+  // Fetch orders from backend
+  const fetchOrders = async () => {
+    // Show UI quickly, load data in background
+    setTimeout(() => setLoading(false), 100);
+    
+    try {
+      console.log('🔑 Admin fetching all orders from Supabase...');
+      
+      // Fetch all orders directly from Supabase - much faster
+      const { data, error } = await supabase
+        .from('orders')
+        .select('*')
+        .order('created_at', { ascending: false });
+      
+      if (error) {
+        console.error('❌ Supabase error:', error.message);
+        setOrders([]);
+        setFilteredOrders([]);
+        setRefreshing(false);
+        return;
+      }
+      
+      console.log('📡 Orders received:', data?.length || 0);
+      
+      if (data && Array.isArray(data)) {
+        console.log('✅ Processing', data.length, 'orders');
+        
+        // Get all unique user IDs to fetch user emails
+        const userIds = [...new Set(data.map((o: any) => o.user_id).filter(Boolean))];
+        
+        // Fetch user emails from users table
+        const { data: usersData } = await supabase
+          .from('users')
+          .select('id, email')
+          .in('id', userIds);
+        
+        const userEmailMap: { [key: string]: string } = {};
+        (usersData || []).forEach((u: any) => {
+          userEmailMap[u.id] = u.email;
+        });
+        
+        // Transform Supabase data to match frontend interface
+        const transformedOrders = data.map((order: any) => {
+          const userName = order.shipping_address?.name || 'Guest';
+          const userEmail = order.shipping_address?.email || userEmailMap[order.user_id] || 'no-email@example.com';
+          
+          return {
+            _id: order.id,
+            id: order.order_number || `ORD-${order.id.toString().slice(-6).toUpperCase()}`,
+            customerName: userName,
+            customerEmail: userEmail,
+            items: (order.items || []).map((item: any) => ({
+              id: item.product || item.id,
+              name: item.name || 'Product',
+              quantity: item.quantity || 1,
+              price: item.price || 0
+            })),
+            totalPrice: order.total_price || 0,
+            paymentStatus: order.is_paid ? 'Paid' : 'Pending',
+            paymentMethod: order.payment_method === 'cash_on_delivery' ? 'Cash' : 
+                          order.payment_method === 'credit_card' ? 'Card' : 
+                          order.payment_method === 'mobile_banking' ? 'Mobile Banking' :
+                          order.payment_method === 'bank_transfer' ? 'Bank Transfer' : 
+                          'Cash',
+            orderStatus: (order.status ? order.status.charAt(0).toUpperCase() + order.status.slice(1) : 'Pending') as Order['orderStatus'],
+            orderDate: order.created_at ? new Date(order.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            orderTime: order.created_at ? new Date(order.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '',
+            shippingAddress: order.shipping_address ? {
+              street: order.shipping_address.street || '',
+              city: order.shipping_address.city || '',
+              state: order.shipping_address.state || '',
+              zipCode: order.shipping_address.zipCode || '',
+              country: order.shipping_address.country || 'Bangladesh',
+              phone: order.shipping_address.phone || ''
+            } : undefined
+          };
+        });
+        
+        console.log('✅ Successfully transformed', transformedOrders.length, 'orders');
+        
+        setOrders(transformedOrders);
+        setFilteredOrders(transformedOrders);
+      } else {
+        console.error('❌ No orders data');
+        setOrders([]);
+        setFilteredOrders([]);
+      }
+    } catch (error: any) {
+      console.error('❌ Error:', error.message);
+      setOrders([]);
+      setFilteredOrders([]);
+    }
+    
+    setRefreshing(false);
+  };
+
+  useEffect(() => {
+    fetchOrders();
+    
+    // Auto-refresh every 20 seconds
+    const interval = setInterval(() => {
+      console.log('🔄 Auto-refreshing orders...');
+      fetchOrders();
+    }, 20000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Auto-open order details when orderId parameter is present
+  useEffect(() => {
+    console.log('🔍 Order auto-open effect:', {
+      hasOrderId: !!params.orderId,
+      orderId: params.orderId,
+      ordersCount: orders.length,
+      orderIds: orders.slice(0, 5).map((o: any) => o._id)
+    });
+    
+    if (params.orderId && orders.length > 0) {
+      console.log('🔍 Looking for order:', params.orderId);
+      const orderToOpen = orders.find(o => (o as any)._id === params.orderId);
+      
+      if (orderToOpen) {
+        console.log('✅ Found order, opening details:', {
+          _id: (orderToOpen as any)._id,
+          orderNumber: (orderToOpen as any).order_number
+        });
+        setSelectedOrder(orderToOpen);
+        setIsOrderDetailVisible(true);
+      } else {
+        console.log('⚠️ Order not found:', params.orderId);
+        console.log('Available order IDs:', orders.map((o: any) => o._id));
+      }
+    }
+  }, [params.orderId, orders]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    fetchOrders();
+  };
 
   // Filter and search logic
   React.useEffect(() => {
@@ -152,6 +309,90 @@ export default function OrderManagement() {
     setIsOrderDetailVisible(true);
   };
 
+  const handleOrderAction = async (orderId: string, status: string, note: string) => {
+    try {
+      // Find the order by id (orderNumber) or _id
+      const orderToUpdate = orders.find(o => o.id === orderId || (o as any)._id === orderId);
+      if (!orderToUpdate) {
+        console.error('Order not found:', orderId);
+        Alert.alert('Error', 'Order not found');
+        return;
+      }
+
+      // Use the Supabase order ID (_id)
+      const supabaseOrderId = (orderToUpdate as any)._id || orderId;
+      console.log('Updating order:', supabaseOrderId, 'to status:', status);
+
+      // Fetch the full order data to get user_id
+      const { data: orderData, error: fetchError } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', supabaseOrderId)
+        .single();
+
+      if (fetchError || !orderData) {
+        throw new Error('Failed to fetch order details');
+      }
+
+      // Update order status in Supabase
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ status: status.toLowerCase() })
+        .eq('id', supabaseOrderId);
+
+      if (updateError) {
+        throw new Error(updateError.message || 'Failed to update order status');
+      }
+
+      // Create notification for the user
+      if (orderData.user_id) {
+        const notificationTitle = status === 'processing' 
+          ? '✅ Order Accepted' 
+          : status === 'cancelled' 
+          ? '❌ Order Rejected' 
+          : '📦 Order Updated';
+        
+        const notificationMessage = status === 'processing'
+          ? `Your order ${orderToUpdate.id} has been accepted and is being processed.`
+          : status === 'cancelled'
+          ? `Your order ${orderToUpdate.id} has been rejected. Please contact support for more information.`
+          : `Your order ${orderToUpdate.id} status has been updated to ${status}.`;
+
+        try {
+          await supabase
+            .from('notifications')
+            .insert([{
+              user_id: orderData.user_id,
+              type: 'order',
+              category: 'Order Update',
+              title: notificationTitle,
+              message: notificationMessage,
+              data: {
+                orderId: supabaseOrderId,
+                orderNumber: orderToUpdate.id,
+                status: status,
+                note: note
+              },
+              is_admin_notification: false,
+              is_read: false
+            }]);
+          
+          console.log('✅ User notification created for order:', orderToUpdate.id);
+        } catch (notifError: any) {
+          console.error('⚠️ Failed to create user notification:', notifError.message);
+          // Don't fail the order update if notification fails
+        }
+      }
+
+      Alert.alert('Success', `Order ${status === 'processing' ? 'accepted' : status === 'cancelled' ? 'rejected' : 'updated'} successfully`);
+      setIsOrderDetailVisible(false);
+      fetchOrders(); // Refresh orders
+    } catch (error: any) {
+      console.error('Order action error:', error);
+      Alert.alert('Error', error.message || 'Failed to update order status');
+    }
+  };
+
   const handleUpdateStatus = (order: Order) => {
     setSelectedOrder(order);
     setNewOrderStatus(order.orderStatus);
@@ -159,21 +400,106 @@ export default function OrderManagement() {
     setIsStatusUpdateVisible(true);
   };
 
-  const saveStatusUpdate = () => {
-    if (selectedOrder) {
-      const updatedOrders = orders.map(order =>
-        order.id === selectedOrder.id
-          ? { ...order, orderStatus: newOrderStatus, paymentStatus: newPaymentStatus }
-          : order
-      );
-      setOrders(updatedOrders);
+  const saveStatusUpdate = async () => {
+    if (!selectedOrder) return;
+    
+    try {
+      // Use the Supabase order ID (_id)
+      const supabaseOrderId = (selectedOrder as any)._id || selectedOrder.id;
+      console.log('Updating order status for:', supabaseOrderId);
+      
+      const updates: any = {};
+      
+      // Update order status if changed
+      if (newOrderStatus !== selectedOrder.orderStatus) {
+        updates.status = newOrderStatus.toLowerCase();
+      }
+      
+      // Update payment status if changed
+      if (newPaymentStatus !== selectedOrder.paymentStatus) {
+        updates.is_paid = newPaymentStatus === 'Paid';
+        if (newPaymentStatus === 'Paid') {
+          updates.paid_at = new Date().toISOString();
+        }
+      }
+      
+      // Only update if there are changes
+      if (Object.keys(updates).length > 0) {
+        const { error } = await supabase
+          .from('orders')
+          .update(updates)
+          .eq('id', supabaseOrderId);
+        
+        if (error) {
+          throw new Error(error.message || 'Failed to update order');
+        }
+        
+        // Fetch the full order data to get user_id for notification
+        const { data: orderData } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', supabaseOrderId)
+          .single();
+        
+        // Create notification for user if status changed
+        if (orderData && orderData.user_id && newOrderStatus !== selectedOrder.orderStatus) {
+          const notificationTitle = newOrderStatus === 'Processing' 
+            ? '✅ Order Accepted' 
+            : newOrderStatus === 'Cancelled' 
+            ? '❌ Order Rejected'
+            : newOrderStatus === 'Shipped'
+            ? '🚚 Order Shipped'
+            : newOrderStatus === 'Delivered'
+            ? '✓ Order Delivered'
+            : '📦 Order Updated';
+          
+          const notificationMessage = newOrderStatus === 'Processing'
+            ? `Your order ${selectedOrder.id} has been accepted and is being processed.`
+            : newOrderStatus === 'Cancelled'
+            ? `Your order ${selectedOrder.id} has been rejected. Please contact support for more information.`
+            : newOrderStatus === 'Shipped'
+            ? `Your order ${selectedOrder.id} has been shipped and is on the way.`
+            : newOrderStatus === 'Delivered'
+            ? `Your order ${selectedOrder.id} has been delivered successfully.`
+            : `Your order ${selectedOrder.id} status has been updated to ${newOrderStatus}.`;
+
+          try {
+            await supabase
+              .from('notifications')
+              .insert([{
+                user_id: orderData.user_id,
+                type: 'order',
+                category: 'Order Update',
+                title: notificationTitle,
+                message: notificationMessage,
+                data: {
+                  orderId: supabaseOrderId,
+                  orderNumber: selectedOrder.id,
+                  status: newOrderStatus.toLowerCase()
+                },
+                is_admin_notification: false,
+                is_read: false
+              }]);
+            
+            console.log('✅ User notification created for order:', selectedOrder.id);
+          } catch (notifError: any) {
+            console.error('⚠️ Failed to create user notification:', notifError.message);
+          }
+        }
+      }
+      
+      Alert.alert('Success', 'Order updated successfully');
       setIsStatusUpdateVisible(false);
       setSelectedOrder(null);
+      fetchOrders(); // Refresh orders
+    } catch (error: any) {
+      console.error('Update status error:', error);
+      Alert.alert('Error', error.message || 'Failed to update order');
     }
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.header}>
         <Package size={24} color="#1F2937" />
@@ -237,16 +563,37 @@ export default function OrderManagement() {
       )}
 
       {/* Orders List */}
-      <ScrollView style={styles.ordersList}>
-        {filteredOrders.map((order) => (
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#3B82F6" />
+          <Text style={styles.loadingText}>Loading orders...</Text>
+        </View>
+      ) : (
+      <ScrollView 
+        style={styles.ordersList}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />
+        }
+      >
+        {filteredOrders.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Package size={64} color="#9CA3AF" />
+            <Text style={styles.emptyText}>No orders found</Text>
+            <Text style={styles.emptySubtext}>Orders will appear here when customers place them</Text>
+          </View>
+        ) : (
+          filteredOrders.map((order) => (
           <View key={order.id} style={styles.orderCard}>
             <View style={styles.orderHeader}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.orderId}>#{order.id}</Text>
                 <View style={styles.customerInfo}>
                   <User size={16} color="#6B7280" />
                   <Text style={styles.customerName}>{order.customerName}</Text>
                 </View>
+                {order.shippingAddress?.phone && (
+                  <Text style={styles.customerPhone}>📞 {order.shippingAddress.phone}</Text>
+                )}
               </View>
               <View style={styles.orderActions}>
                 <TouchableOpacity
@@ -293,8 +640,10 @@ export default function OrderManagement() {
               </View>
             </View>
           </View>
-        ))}
+        ))
+        )}
       </ScrollView>
+      )}
 
       {/* Order Detail Modal */}
       <Modal
@@ -339,6 +688,40 @@ export default function OrderManagement() {
                 </View>
               </View>
 
+              {selectedOrder.shippingAddress && (
+                <View style={styles.detailSection}>
+                  <Text style={styles.sectionTitle}>Shipping Address</Text>
+                  {selectedOrder.shippingAddress.phone && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Phone:</Text>
+                      <Text style={styles.detailValue}>{selectedOrder.shippingAddress.phone}</Text>
+                    </View>
+                  )}
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Address:</Text>
+                    <Text style={styles.detailValue}>
+                      {selectedOrder.shippingAddress.street}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>City:</Text>
+                    <Text style={styles.detailValue}>{selectedOrder.shippingAddress.city}</Text>
+                  </View>
+                  {selectedOrder.shippingAddress.zipCode && selectedOrder.shippingAddress.zipCode !== '0000' && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Postal Code:</Text>
+                      <Text style={styles.detailValue}>{selectedOrder.shippingAddress.zipCode}</Text>
+                    </View>
+                  )}
+                  {selectedOrder.shippingAddress.country && (
+                    <View style={styles.detailRow}>
+                      <Text style={styles.detailLabel}>Country:</Text>
+                      <Text style={styles.detailValue}>{selectedOrder.shippingAddress.country}</Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Order Items</Text>
                 {selectedOrder.items.map((item) => (
@@ -369,6 +752,50 @@ export default function OrderManagement() {
                   </View>
                 </View>
               </View>
+
+              {selectedOrder.orderStatus === 'Pending' && (
+                <View style={styles.actionSection}>
+                  <Text style={styles.sectionTitle}>Order Actions</Text>
+                  <View style={styles.actionButtons}>
+                    <TouchableOpacity 
+                      style={[styles.actionBtn, styles.acceptBtn]}
+                      onPress={() => handleOrderAction(selectedOrder.id, 'processing', 'Order accepted by admin')}
+                    >
+                      <Text style={styles.actionBtnText}>✓ Accept Order</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      style={[styles.actionBtn, styles.rejectBtn]}
+                      onPress={() => handleOrderAction(selectedOrder.id, 'cancelled', 'Order rejected by admin')}
+                    >
+                      <Text style={styles.actionBtnText}>✕ Reject Order</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+
+              {selectedOrder.orderStatus === 'Processing' && (
+                <View style={styles.actionSection}>
+                  <Text style={styles.sectionTitle}>Order Actions</Text>
+                  <TouchableOpacity 
+                    style={[styles.actionBtn, styles.shipBtn]}
+                    onPress={() => handleOrderAction(selectedOrder.id, 'shipped', 'Order shipped')}
+                  >
+                    <Text style={styles.actionBtnText}>🚚 Mark as Shipped</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {selectedOrder.orderStatus === 'Shipped' && (
+                <View style={styles.actionSection}>
+                  <Text style={styles.sectionTitle}>Order Actions</Text>
+                  <TouchableOpacity 
+                    style={[styles.actionBtn, styles.deliverBtn]}
+                    onPress={() => handleOrderAction(selectedOrder.id, 'delivered', 'Order delivered')}
+                  >
+                    <Text style={styles.actionBtnText}>✓ Mark as Delivered</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </ScrollView>
           )}
         </View>
@@ -588,7 +1015,7 @@ export default function OrderManagement() {
           </View>
         </View>
       </Modal>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -647,6 +1074,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Medium',
     color: '#6B7280',
+  },
+  customerPhone: {
+    fontSize: 12,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    marginTop: 4,
+    marginLeft: 22,
   },
   orderActions: {
     flexDirection: 'row',
@@ -983,5 +1417,72 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'Inter-Regular',
     backgroundColor: '#F9FAFB',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+    fontFamily: 'Inter-Medium',
+    color: '#6B7280',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyText: {
+    marginTop: 16,
+    fontSize: 18,
+    fontFamily: 'Inter-SemiBold',
+    color: '#111827',
+  },
+  emptySubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    fontFamily: 'Inter-Regular',
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  actionSection: {
+    padding: 20,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 12,
+  },
+  actionBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  acceptBtn: {
+    backgroundColor: '#10B981',
+  },
+  rejectBtn: {
+    backgroundColor: '#EF4444',
+  },
+  shipBtn: {
+    backgroundColor: '#3B82F6',
+  },
+  deliverBtn: {
+    backgroundColor: '#10B981',
+  },
+  actionBtnText: {
+    fontSize: 16,
+    fontFamily: 'Inter-SemiBold',
+    color: '#FFFFFF',
   },
 });

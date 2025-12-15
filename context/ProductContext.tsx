@@ -1,14 +1,17 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { productService } from '@/services/productService';
 
 export interface Product {
   id: string;
   name: string;
   price: number;
+  regularPrice?: number;
   originalPrice?: number;
   description: string;
   images: string[];
   category: string;
   subcategory?: string;
+  brand?: string;
   rating: number;
   reviews: number;
   colors?: string[];
@@ -16,15 +19,22 @@ export interface Product {
   isNew?: boolean;
   isFeatured?: boolean;
   stock?: number;
+  totalStock?: number;
   discountPrice?: number;
+  availableSizes?: string[];
+  availableColors?: string[];
+  variants?: { name?: string; value?: string; stock?: number; size?: string; color?: string; sku?: string }[];
 }
 
 interface ProductContextType {
   products: Product[];
+  loading: boolean;
+  error: string | null;
   addProduct: (product: Product) => void;
   updateProduct: (id: string, product: Product) => void;
   deleteProduct: (id: string) => void;
   getProductById: (id: string) => Product | undefined;
+  refreshProducts: () => Promise<void>;
 }
 
 const ProductContext = createContext<ProductContextType | undefined>(undefined);
@@ -133,18 +143,106 @@ const initialProducts: Product[] = [
 ];
 
 export function ProductProvider({ children }: { children: ReactNode }) {
-  const [products, setProducts] = useState<Product[]>(initialProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const addProduct = (product: Product) => {
-    setProducts(prev => [...prev, product]);
+  const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      console.log('🔵 Fetching products from API...');
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 10000)
+      );
+      
+      const data = await Promise.race([
+        productService.getAllProducts(),
+        timeoutPromise
+      ]) as any;
+      
+      console.log('✅ Products fetched:', data.length, 'products');
+      // Always use API data, no fallback to mock
+      setProducts(data || []);
+      
+      if (!data || data.length === 0) {
+        console.log('ℹ️ No products in database yet');
+      }
+    } catch (err: any) {
+      console.error('❌ Failed to fetch products:', err.message);
+      setError(err.message || 'Failed to load products');
+      // Set empty array on error
+      setProducts([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const updateProduct = (id: string, updatedProduct: Product) => {
-    setProducts(prev => prev.map(p => p.id === id ? updatedProduct : p));
+  // Stable refresh function that won't cause re-renders
+  const refreshProducts = useCallback(async () => {
+    try {
+      const data = await productService.getAllProducts();
+      setProducts(data || []);
+      console.log('🔄 Products refreshed:', data?.length || 0);
+      setError(null);
+    } catch (err: any) {
+      console.log('⚠️ Failed to refresh products:', err.message);
+      // Don't set error during background refresh to avoid UI disruption
+    }
+  }, []);
+
+  // Fetch products from Supabase on mount and set up polling
+  useEffect(() => {
+    // Fetch immediately
+    fetchProducts();
+    
+    // Set up polling every 30 seconds for real-time updates (reduced frequency)
+    const pollInterval = setInterval(() => {
+      console.log('🔄 Polling for product updates...');
+      refreshProducts();
+    }, 30000); // Changed from 5000 to 30000 (30 seconds)
+    
+    return () => clearInterval(pollInterval);
+  }, [refreshProducts]);
+
+  const addProduct = async (product: Product) => {
+    try {
+      console.log('🔵 Adding product to backend...');
+      const newProduct = await productService.createProduct(product);
+      console.log('✅ Product added to backend:', newProduct);
+      // Immediately update local state with the new product
+      setProducts(prev => [...prev, newProduct]);
+      return newProduct;
+    } catch (err: any) {
+      console.error('❌ Failed to add product:', err);
+      // Fallback to local state
+      setProducts(prev => [...prev, product]);
+      throw err;
+    }
   };
 
-  const deleteProduct = (id: string) => {
-    setProducts(prev => prev.filter(p => p.id !== id));
+  const updateProduct = async (id: string, updatedProduct: Product) => {
+    try {
+      const updated = await productService.updateProduct(id, updatedProduct);
+      setProducts(prev => prev.map(p => p.id === id ? updated : p));
+    } catch (err: any) {
+      console.error('Failed to update product:', err);
+      // Fallback to local state
+      setProducts(prev => prev.map(p => p.id === id ? updatedProduct : p));
+    }
+  };
+
+  const deleteProduct = async (id: string) => {
+    try {
+      await productService.deleteProduct(id);
+      setProducts(prev => prev.filter(p => p.id !== id));
+    } catch (err: any) {
+      console.error('Failed to delete product:', err);
+      // Fallback to local state
+      setProducts(prev => prev.filter(p => p.id !== id));
+    }
   };
 
   const getProductById = (id: string) => {
@@ -154,11 +252,14 @@ export function ProductProvider({ children }: { children: ReactNode }) {
   return (
     <ProductContext.Provider 
       value={{ 
-        products, 
+        products,
+        loading,
+        error,
         addProduct, 
         updateProduct, 
         deleteProduct,
-        getProductById 
+        getProductById,
+        refreshProducts
       }}
     >
       {children}

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_ENDPOINTS, apiClient } from '../config/api';
+import { authService } from '@/services/authService';
 
 interface User {
   _id: string;
@@ -18,6 +18,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<User>;
   register: (email: string, password: string, name: string) => Promise<User>;
   logout: () => void;
+  updateUser: (userData: Partial<User>) => Promise<void>;
   isAuthenticated: boolean;
 }
 
@@ -34,28 +35,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadUser = async () => {
     try {
-      const token = await AsyncStorage.getItem('userToken');
-      const userDataString = await AsyncStorage.getItem('userData');
+      const token = await AsyncStorage.getItem('token');
+      const userDataString = await AsyncStorage.getItem('user');
       
       if (token && userDataString) {
-        // Load from stored data (mock mode)
         const userData = JSON.parse(userDataString);
-        setUser(userData);
+        setUser({ ...userData, token });
       }
-      
-      // Uncomment below for real API when backend is ready
-      /*
-      if (token) {
-        const response = await apiClient.get(API_ENDPOINTS.AUTH.ME, token);
-        if (response.success) {
-          setUser({ ...response.data, token });
-        }
-      }
-      */
     } catch (error) {
       console.error('Error loading user:', error);
-      await AsyncStorage.removeItem('userToken');
-      await AsyncStorage.removeItem('userData');
+      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('user');
     } finally {
       setIsLoading(false);
     }
@@ -64,52 +54,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string): Promise<User> => {
     setIsLoading(true);
     try {
-      // Mock login - works without backend
-      // Check for demo accounts
-      let role: 'user' | 'admin' | 'seller' = 'user';
-      
-      if (email === 'admin@test.com' && password === 'admin123') {
-        role = 'admin';
-      } else if (email === 'user@test.com' && password === 'user123') {
-        role = 'user';
-      } else if (!email || !password) {
+      // Validate input
+      if (!email || !password) {
         throw new Error('Please enter email and password');
       }
-      
-      // Create mock user data
-      const userData: User = {
-        _id: Math.random().toString(36).substr(2, 9),
-        email: email,
-        name: email.split('@')[0],
-        role: role,
-        token: 'mock-token-' + Math.random().toString(36).substr(2, 9),
-      };
-      
-      await AsyncStorage.setItem('userToken', userData.token);
-      await AsyncStorage.setItem('userData', JSON.stringify(userData));
-      setUser(userData);
-      
-      return userData;
-      
-      // Uncomment below for real API when backend is ready
-      /*
-      const response = await apiClient.post(API_ENDPOINTS.AUTH.LOGIN, {
-        email,
-        password,
-      });
 
-      if (response.success) {
-        const userData = response.data;
-        await AsyncStorage.setItem('userToken', userData.token);
-        setUser(userData);
-      } else {
-        throw new Error(response.message || 'Login failed');
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Please enter a valid email address');
       }
-      */
+
+      // Call Supabase for login
+      const response = await authService.login({ email, password });
+      
+      console.log('Login response:', response);
+      
+      const userData: User = {
+        _id: response.data.user?.id || response.data.user?._id || response.data._id,
+        email: response.data.user?.email || response.data.email,
+        name: response.data.user?.name || response.data.name,
+        role: (response.data.user?.role || response.data.role || 'user') as 'user' | 'admin' | 'seller',
+        avatar: response.data.user?.avatar || response.data.avatar,
+        token: response.data.token,
+      };
+
+      // Save to AsyncStorage
+      await AsyncStorage.setItem('token', userData.token);
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+
+      setUser(userData);
+      return userData;
+
     } catch (error: any) {
       console.error('Login error:', error);
-      setIsLoading(false);
-      throw new Error(error.message || 'Invalid credentials');
+      
+      // Better error messages
+      let errorMessage = 'Invalid email or password';
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -118,46 +106,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = async (email: string, password: string, name: string): Promise<User> => {
     setIsLoading(true);
     try {
-      // Mock registration - works without backend
+      console.log('🔵 Starting registration...', { email, name });
+      
+      // Validate input
       if (!email || !password || !name) {
         throw new Error('Please fill in all fields');
       }
-      
-      // Create mock user data
-      const userData: User = {
-        _id: Math.random().toString(36).substr(2, 9),
-        email: email,
-        name: name,
-        role: 'user',
-        token: 'mock-token-' + Math.random().toString(36).substr(2, 9),
-      };
-      
-      await AsyncStorage.setItem('userToken', userData.token);
-      await AsyncStorage.setItem('userData', JSON.stringify(userData));
-      setUser(userData);
-      
-      return userData;
-      
-      // Uncomment below for real API when backend is ready
-      /*
-      const response = await apiClient.post(API_ENDPOINTS.AUTH.REGISTER, {
-        email,
-        password,
-        name,
-      });
 
-      if (response.success) {
-        const userData = response.data;
-        await AsyncStorage.setItem('userToken', userData.token);
-        setUser(userData);
-      } else {
-        throw new Error(response.message || 'Registration failed');
+      // Email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        throw new Error('Please enter a valid email address');
       }
-      */
+
+      // Password validation
+      if (password.length < 6) {
+        throw new Error('Password must be at least 6 characters long');
+      }
+
+      // Name validation
+      if (name.trim().length < 2) {
+        throw new Error('Name must be at least 2 characters long');
+      }
+
+      console.log('✅ Validation passed, calling API...');
+
+      // Call Supabase for registration
+      const response = await authService.register({ email, password, name });
+      
+      console.log('✅ API response received:', response);
+
+      const userData: User = {
+        _id: response.data.user?.id || response.data.user?._id || response.data._id,
+        email: response.data.user?.email || response.data.email,
+        name: response.data.user?.name || response.data.name,
+        role: (response.data.user?.role || response.data.role || 'user') as 'user' | 'admin' | 'seller',
+        avatar: response.data.user?.avatar || response.data.avatar,
+        token: response.data.token,
+      };
+
+      // Save to AsyncStorage
+      await AsyncStorage.setItem('token', userData.token);
+      await AsyncStorage.setItem('user', JSON.stringify(userData));
+
+      setUser(userData);
+      console.log('✅ Registration successful!');
+      return userData;
+
     } catch (error: any) {
-      console.error('Registration error:', error);
-      setIsLoading(false);
-      throw new Error(error.message || 'Registration failed');
+      console.error('❌ Registration error details:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+      
+      // Better error messages
+      let errorMessage = 'Registration failed. Please try again.';
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message === 'Network Error' || error.code === 'ECONNREFUSED') {
+        errorMessage = 'Cannot connect to server. Please make sure backend is running.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      throw new Error(errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -165,11 +179,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     try {
-      await AsyncStorage.removeItem('userToken');
-      await AsyncStorage.removeItem('userData');
+      await authService.logout();
+      // Clear all user-specific data
+      await AsyncStorage.removeItem('token');
+      await AsyncStorage.removeItem('user');
+      await AsyncStorage.removeItem('cart');
+      await AsyncStorage.removeItem('wishlist');
       setUser(null);
+      console.log('✅ User logged out and all data cleared');
     } catch (error) {
       console.error('Logout error:', error);
+    }
+  };
+
+  const updateUser = async (userData: Partial<User>) => {
+    try {
+      if (user) {
+        const updatedUser = { ...user, ...userData };
+        setUser(updatedUser);
+        await AsyncStorage.setItem('user', JSON.stringify(updatedUser));
+        console.log('✅ User updated in AuthContext');
+      }
+    } catch (error) {
+      console.error('Error updating user:', error);
     }
   };
 
@@ -181,6 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login, 
         register, 
         logout,
+        updateUser,
         isAuthenticated: !!user 
       }}
     >

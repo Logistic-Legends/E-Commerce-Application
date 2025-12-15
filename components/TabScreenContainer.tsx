@@ -10,7 +10,7 @@ export function TabScreenContainer({ children }: { children: React.ReactNode }) 
       styles.container,
       { 
         paddingBottom: Platform.select({
-          android: 105, // Adjusted for new tab bar position
+          android: 70, // Adjusted for new tab bar position
           ios: 60 + insets.bottom
         })
       }

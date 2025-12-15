@@ -1,4 +1,9 @@
+// Ensure the runtime API override is set before any other modules are imported.
+import './globalDev';
 import { useEffect } from 'react';
+// Development-time override: allow setting a runtime API base from global or process env.
+// This helps testing with custom host IPs without needing to change source later.
+// (We use `app/globalDev.ts` to set the runtime override early)
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useFrameworkReady } from '@/hooks/useFrameworkReady';
@@ -25,6 +30,19 @@ export default function RootLayout() {
     if (fontsLoaded || fontError) {
       SplashScreen.hideAsync();
     }
+  }, [fontsLoaded, fontError]);
+
+  // Fallback: if fonts hang for some reason, hide splash after 5s to avoid permanent blank screen
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null;
+    if (!fontsLoaded && !fontError) {
+      timer = setTimeout(() => {
+        SplashScreen.hideAsync().catch(() => {});
+      }, 5000);
+    }
+    return () => {
+      if (timer) clearTimeout(timer as any);
+    };
   }, [fontsLoaded, fontError]);
 
   if (!fontsLoaded && !fontError) {

@@ -38,8 +38,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <TabScreenContainer>
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <View>
@@ -52,7 +51,7 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.searchContainer}>
-          <Search size={20} color="#9CA3AF" style={styles.searchIcon} />
+          <Search size={18} color="#9CA3AF" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search products..."
@@ -65,6 +64,7 @@ export default function HomeScreen() {
       <ScrollView 
         style={styles.content}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 80 }}
       >
         <View style={styles.categoriesSection}>
           <Text style={styles.sectionTitle}>Categories</Text>
@@ -103,7 +103,10 @@ export default function HomeScreen() {
                 onPress={() => router.push(`/product/${product.id}`)}
               >
                 <View style={styles.productImageContainer}>
-                  <Image source={{ uri: product.images[0] }} style={styles.productImage} />
+                  <Image 
+                    source={{ uri: product.images?.[0] || 'https://via.placeholder.com/300' }} 
+                    style={styles.productImage} 
+                  />
                   <TouchableOpacity
                     style={styles.wishlistButton}
                     onPress={() => handleWishlistToggle(product)}
@@ -129,9 +132,9 @@ export default function HomeScreen() {
                     <Text style={styles.reviews}>({product.reviews})</Text>
                   </View>
                   <View style={styles.priceContainer}>
-                    <Text style={styles.price}>${product.price}</Text>
+                    <Text style={styles.price}>৳{product.price}</Text>
                     {product.originalPrice && (
-                      <Text style={styles.originalPrice}>${product.originalPrice}</Text>
+                      <Text style={styles.originalPrice}>৳{product.originalPrice}</Text>
                     )}
                   </View>
                 </View>
@@ -141,14 +144,13 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
-    </TabScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
   },
   header: {
     backgroundColor: '#FFFFFF',
@@ -183,24 +185,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   searchIcon: {
-    marginRight: 12,
+    marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: 'Inter-Regular',
     color: '#111827',
   },
   content: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   categoriesSection: {
-    paddingVertical: 24,
+    paddingTop: 20,
+    paddingBottom: 16,
+    backgroundColor: '#FFFFFF',
   },
   sectionTitle: {
     fontSize: 20,
@@ -231,13 +236,16 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   featuredSection: {
-    paddingBottom: 32,
+    paddingBottom: 0,
+    backgroundColor: '#FFFFFF',
   },
   productsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     paddingHorizontal: 16,
     gap: 16,
+    backgroundColor: '#FFFFFF',
+    paddingBottom: 20,
   },
   productCard: {
     backgroundColor: '#FFFFFF',

@@ -1,20 +1,22 @@
 import { useAuth } from '@/context/AuthContext';
 import { Drawer } from 'expo-router/drawer';
-import { ActivitySquare, Box, Users, ShoppingCart, CreditCard, Megaphone, MessageSquare, BarChart2, Settings, Package2, User } from 'lucide-react-native';
+import { ActivitySquare, Box, Users, ShoppingCart, CreditCard, Megaphone, MessageSquare, BarChart2, Settings, Package2, User, Bell } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { useEffect } from 'react';
 
 export default function AdminLayout() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!user || user.role !== 'admin') {
+    // Only redirect after loading is complete
+    if (!isLoading && (!user || user.role !== 'admin')) {
       router.replace('/(auth)/login');
     }
-  }, [user]);
+  }, [user, isLoading]);
 
-  if (!user || user.role !== 'admin') {
+  // Show nothing while loading or if not authorized
+  if (isLoading || !user || user.role !== 'admin') {
     return null;
   }
 
@@ -79,31 +81,23 @@ export default function AdminLayout() {
         }}
       />
       <Drawer.Screen
-        name="marketing"
+        name="notifications"
         options={{
-          title: 'Marketing',
-          drawerLabel: 'Marketing & Promotions',
-          drawerIcon: ({ color, size }) => <Megaphone size={size} color={color} />,
+          title: 'Notifications',
+          drawerLabel: 'Notification Control',
+          drawerIcon: ({ color, size }) => <Bell size={size} color={color} />,
         }}
       />
       <Drawer.Screen
-        name="reviews"
+        name="support"
         options={{
-          title: 'Reviews',
-          drawerLabel: 'Review Management',
+          title: 'Support',
+          drawerLabel: 'Support Tickets',
           drawerIcon: ({ color, size }) => <MessageSquare size={size} color={color} />,
         }}
       />
       <Drawer.Screen
-        name="reports"
-        options={{
-          title: 'Reports',
-          drawerLabel: 'Reports & Analytics',
-          drawerIcon: ({ color, size }) => <BarChart2 size={size} color={color} />,
-        }}
-      />
-      <Drawer.Screen
-        name="settings/index"
+        name="settings"
         options={{
           title: 'Settings',
           drawerLabel: 'System Settings',

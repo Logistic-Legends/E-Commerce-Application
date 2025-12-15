@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './AuthContext';
 
 export interface CartItem {
   id: string;
@@ -24,6 +26,42 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
+  const { user } = useAuth();
+
+  // Load cart from AsyncStorage when user changes
+  useEffect(() => {
+    loadCart();
+  }, [user?._id]);
+
+  const loadCart = async () => {
+    try {
+      if (!user?._id) {
+        setItems([]);
+        return;
+      }
+      const cartKey = `cart_${user._id}`;
+      const cartData = await AsyncStorage.getItem(cartKey);
+      if (cartData) {
+        setItems(JSON.parse(cartData));
+      } else {
+        setItems([]);
+      }
+    } catch (error) {
+      console.error('Error loading cart:', error);
+      setItems([]);
+    }
+  };
+
+  const saveCart = async (cartItems: CartItem[]) => {
+    try {
+      if (user?._id) {
+        const cartKey = `cart_${user._id}`;
+        await AsyncStorage.setItem(cartKey, JSON.stringify(cartItems));
+      }
+    } catch (error) {
+      console.error('Error saving cart:', error);
+    }
+  };
 
   const addToCart = (product: Omit<CartItem, 'quantity'>) => {
     setItems(prevItems => {
@@ -33,22 +71,30 @@ export function CartProvider({ children }: { children: ReactNode }) {
         item.size === product.size
       );
       
+      let newItems;
       if (existingItem) {
-        return prevItems.map(item =>
+        newItems = prevItems.map(item =>
           item.id === product.id && 
           item.color === product.color && 
           item.size === product.size
             ? { ...item, quantity: item.quantity + 1 }
             : item
         );
+      } else {
+        newItems = [...prevItems, { ...product, quantity: 1 }];
       }
       
-      return [...prevItems, { ...product, quantity: 1 }];
+      saveCart(newItems);
+      return newItems;
     });
   };
 
   const removeFromCart = (id: string) => {
-    setItems(prevItems => prevItems.filter(item => item.id !== id));
+    setItems(prevItems => {
+      const newItems = prevItems.filter(item => item.id !== id);
+      saveCart(newItems);
+      return newItems;
+    });
   };
 
   const updateQuantity = (id: string, quantity: number) => {
@@ -57,15 +103,21 @@ export function CartProvider({ children }: { children: ReactNode }) {
       return;
     }
     
-    setItems(prevItems =>
-      prevItems.map(item =>
+    setItems(prevItems => {
+      const newItems = prevItems.map(item =>
         item.id === id ? { ...item, quantity } : item
-      )
-    );
+      );
+      saveCart(newItems);
+      return newItems;
+    });
   };
 
-  const clearCart = () => {
+  const clearCart = async () => {
     setItems([]);
+    if (user?._id) {
+      const cartKey = `cart_${user._id}`;
+      await AsyncStorage.removeItem(cartKey);
+    }
   };
 
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);

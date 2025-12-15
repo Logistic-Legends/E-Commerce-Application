@@ -1,13 +1,18 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { useCart } from '@/context/CartContext';
+import { useAuth } from '@/context/AuthContext';
 import { ArrowLeft, CreditCard, Truck } from 'lucide-react-native';
+import { supabase } from '@/lib/supabase';
+import { userService } from '@/lib/supabase-services';
 
 export default function CheckoutScreen() {
   const { items, totalPrice, clearCart } = useCart();
+  const { user } = useAuth();
   const router = useRouter();
+  const [loading, setLoading] = useState(false);
 
   const [shippingAddress, setShippingAddress] = useState({
     name: '',
@@ -17,27 +22,188 @@ export default function CheckoutScreen() {
     postalCode: '',
   });
 
+  // Auto-fill shipping address from user profile
+  useEffect(() => {
+    const loadUserAddress = async () => {
+      if (user?._id) {
+        try {
+          const { data, error } = await userService.getProfile(user._id);
+          
+          if (data && !error) {
+            // Auto-fill the form with user's saved data
+            setShippingAddress({
+              name: data.name || '',
+              phone: data.phone || '',
+              street: data.full_address || '',
+              city: '', // Can be parsed from full_address if structured
+              postalCode: '', // Can be parsed from full_address if structured
+            });
+          }
+        } catch (error) {
+          console.error('Error loading user address:', error);
+        }
+      }
+    };
+    
+    loadUserAddress();
+  }, [user]);
+
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'card' | 'mobile'>('cod');
 
-  const handlePlaceOrder = () => {
+  const handlePlaceOrder = async () => {
     if (!shippingAddress.name || !shippingAddress.phone || !shippingAddress.street || !shippingAddress.city) {
       Alert.alert('Error', 'Please fill in all required shipping address fields');
       return;
     }
 
-    Alert.alert(
-      'Order Placed!',
-      'Your order has been placed successfully. You will receive a confirmation email shortly.',
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            clearCart();
-            router.replace('/(tabs)/' as any);
+    if (!user) {
+      Alert.alert('Error', 'Please login to place an order');
+      router.push('/(auth)/login' as any);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // Prepare order data
+      const orderData = {
+        items: items.map(item => ({
+          product: item.id,
+          name: item.name,
+          image: item.image,
+          quantity: item.quantity,
+          price: item.price,
+          variant: item.color && item.size ? `${item.color} / ${item.size}` : item.color || item.size || ''
+        })),
+        shippingAddress: {
+          name: shippingAddress.name,
+          email: user.email || '',
+          phone: shippingAddress.phone,
+          street: shippingAddress.street,
+          city: shippingAddress.city,
+          state: shippingAddress.city, // Using city as state for now
+          zipCode: shippingAddress.postalCode || '0000',
+          country: 'Bangladesh'
+        },
+        paymentMethod: paymentMethod === 'cod' ? 'cash_on_delivery' : 
+                       paymentMethod === 'card' ? 'credit_card' : 'bank_transfer',
+        itemsPrice: totalPrice,
+        taxPrice: 0,
+        shippingPrice: 0,
+        totalPrice: totalPrice
+      };
+
+
+      // Generate unique order number
+      const orderNumber = `ORD-${Date.now().toString().slice(-8).toUpperCase()}`;
+
+      // Insert order into Supabase (use separate price columns)
+      const { data: newOrder, error } = await supabase
+        .from('orders')
+        .insert([{
+          user_id: user._id,
+          order_number: orderNumber,
+          items: orderData.items,
+          shipping_address: orderData.shippingAddress,
+          payment_method: orderData.paymentMethod,
+          subtotal: orderData.itemsPrice,
+          shipping_price: orderData.shippingPrice,
+          total_price: orderData.totalPrice,
+          status: 'pending'
+        }])
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(error.message || 'Failed to place order');
+      }
+
+      // Create notification for admin about new order
+      try {
+        await supabase
+          .from('notifications')
+          .insert([{
+            user_id: user._id,
+            type: 'order',
+            category: 'New Order',
+            title: '🛒 New Order Placed',
+            message: `New order ${orderNumber} placed by ${shippingAddress.name}. Total: ৳${totalPrice.toFixed(2)}`,
+            data: {
+              orderId: newOrder.id,
+              orderNumber: orderNumber,
+              customerName: shippingAddress.name,
+              totalAmount: totalPrice,
+              itemsCount: items.length
+            },
+            is_admin_notification: true,
+            is_read: false
+          }]);
+        
+        console.log('✅ Admin notification created for order:', orderNumber);
+      } catch (notifError: any) {
+        console.error('⚠️ Failed to create admin notification:', notifError.message);
+        // Don't fail the order if notification fails
+      }
+
+      // Update loyalty points (1 point per 100 taka spent)
+      try {
+        const pointsEarned = Math.floor(totalPrice / 100);
+        
+        if (pointsEarned > 0) {
+          // Get current loyalty points
+          const { data: userData, error: userError } = await supabase
+            .from('users')
+            .select('loyalty_points')
+            .eq('id', user._id)
+            .single();
+
+          if (!userError && userData) {
+            const currentPoints = userData.loyalty_points || 0;
+            const newPoints = currentPoints + pointsEarned;
+
+            // Update loyalty points
+            const { error: updateError } = await supabase
+              .from('users')
+              .update({ loyalty_points: newPoints })
+              .eq('id', user._id);
+
+            if (!updateError) {
+              console.log(`✅ Added ${pointsEarned} loyalty points. Total: ${newPoints}`);
+            }
           }
         }
-      ]
-    );
+      } catch (pointsError: any) {
+        console.error('⚠️ Failed to update loyalty points:', pointsError.message);
+        // Don't fail the order if points update fails
+      }
+
+      // Show success alert
+      Alert.alert(
+        '✅ Order Placed Successfully!',
+        `Your order ${orderNumber} has been placed successfully.\n\nTotal: ৳${totalPrice.toFixed(2)}\nPayment: ${paymentMethod === 'cod' ? 'Cash on Delivery' : paymentMethod === 'card' ? 'Card' : 'Mobile Banking'}\n\nYou will receive a confirmation shortly.`,
+        [
+          {
+            text: 'View Orders',
+            onPress: () => {
+              clearCart();
+              router.replace('/orders' as any);
+            }
+          },
+          {
+            text: 'Continue Shopping',
+            onPress: () => {
+              clearCart();
+              router.replace('/(tabs)/' as any);
+            }
+          }
+        ]
+      );
+    } catch (error: any) {
+      console.error('Order placement error:', error);
+      Alert.alert('Error', error.message || 'Failed to place order. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -183,8 +349,16 @@ export default function CheckoutScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.placeOrderButton} onPress={handlePlaceOrder}>
-          <Text style={styles.placeOrderText}>Place Order</Text>
+        <TouchableOpacity 
+          style={[styles.placeOrderButton, loading && styles.placeOrderButtonDisabled]} 
+          onPress={handlePlaceOrder}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.placeOrderText}>Place Order</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -377,6 +551,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+  },
+  placeOrderButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+    opacity: 0.7,
   },
   placeOrderText: {
     color: '#FFFFFF',

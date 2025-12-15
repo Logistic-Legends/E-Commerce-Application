@@ -48,7 +48,7 @@ export default function WishlistScreen() {
         <Text style={styles.itemCount}>{items.length} item{items.length !== 1 ? 's' : ''}</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 80 }}>
         <View style={styles.productsGrid}>
           {items.map((item) => (
             <View key={item.id} style={styles.productCard}>
@@ -66,7 +66,7 @@ export default function WishlistScreen() {
                 <View style={styles.productInfo}>
                   <Text style={styles.productName} numberOfLines={2}>{item.name}</Text>
                   <Text style={styles.categoryText}>{item.category}</Text>
-                  <Text style={styles.price}>${item.price}</Text>
+                  <Text style={styles.price}>৳{item.price}</Text>
                 </View>
               </TouchableOpacity>
               

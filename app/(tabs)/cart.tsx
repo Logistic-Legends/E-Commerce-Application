@@ -48,7 +48,7 @@ export default function CartScreen() {
         <Text style={styles.itemCount}>{totalItems} item{totalItems !== 1 ? 's' : ''}</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 80 }}>
         {items.map((item) => (
           <View key={`${item.id}-${item.color}-${item.size}`} style={styles.cartItem}>
             <Image source={{ uri: item.image }} style={styles.itemImage} />

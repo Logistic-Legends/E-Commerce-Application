@@ -23,7 +23,7 @@ export default function WelcomeScreen() {
         <View style={styles.overlay} />
         <View style={styles.content}>
           <View style={styles.headerSection}>
-            <Text style={styles.title}>ShopApp</Text>
+            <Text style={styles.title}>Kinun24</Text>
             <Text style={styles.subtitle}>
               Discover amazing products and enjoy seamless shopping experience
             </Text>

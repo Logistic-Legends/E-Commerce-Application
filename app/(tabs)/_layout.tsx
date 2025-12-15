@@ -1,5 +1,5 @@
 import { Tabs } from 'expo-router';
-import { Chrome as Home, Search, ShoppingCart, Heart, User } from 'lucide-react-native';
+import { House, Search, ShoppingCart, Heart, User } from 'lucide-react-native';
 import { useCart } from '@/context/CartContext';
 import { useWishlist } from '@/context/WishlistContext';
 import { View, Text, StyleSheet, Platform } from 'react-native';
@@ -26,37 +26,26 @@ export default function TabLayout() {
         headerShown: false,
         tabBarStyle: {
           backgroundColor: '#FFFFFF',
-          borderWidth: 1,
-          borderColor: '#E5E7EB',
-          borderRadius: 12,
-          height: 50,
-          maxHeight: 50,
-          position: 'absolute',
-          bottom: Platform.select({
-            android: 38, // Moved higher from the navigation bar
-            ios: 0
-          }),
-          left: 10,
-          right: 10,
-          marginHorizontal: 'auto',
-          elevation: 0,
-          shadowColor: 'transparent',
-          shadowOpacity: 0,
-          paddingTop: 0,
-          paddingBottom: 0,
+          borderTopWidth: 1,
+          borderTopColor: '#E5E7EB',
+          height: 60 + insets.bottom,
+          paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+          paddingTop: 8,
+          elevation: 8,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 8,
         },
         tabBarItemStyle: {
-          height: 50,
-          padding: 0,
-          margin: 0,
+          paddingVertical: 4,
         },
         tabBarIconStyle: {
-          marginBottom: 0,
+          marginTop: 4,
         },
         tabBarLabelStyle: {
-          fontSize: 11,
+          fontSize: 12,
           fontFamily: 'Inter-Medium',
-          marginTop: 0,
           marginBottom: 4,
         },
         tabBarHideOnKeyboard: true,
@@ -69,7 +58,7 @@ export default function TabLayout() {
         options={{
           title: 'Home',
           tabBarIcon: ({ size, color }) => (
-            <Home size={size} color={color} />
+            <House size={size} color={color} />
           ),
         }}
       />
