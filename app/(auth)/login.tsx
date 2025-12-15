@@ -4,6 +4,7 @@ import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
 import { ArrowLeft, User, UserCog, Eye, EyeOff } from 'lucide-react-native';
+import AnimatedLogo from '@/components/AnimatedLogo';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');

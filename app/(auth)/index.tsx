@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, ImageBackground } from 'react
 import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/context/AuthContext';
+import AnimatedLogo from '@/components/AnimatedLogo';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -23,6 +24,7 @@ export default function WelcomeScreen() {
         <View style={styles.overlay} />
         <View style={styles.content}>
           <View style={styles.headerSection}>
+            <AnimatedLogo size={140} style={styles.logo} />
             <Text style={styles.title}>Kinun24</Text>
             <Text style={styles.subtitle}>
               Discover amazing products and enjoy seamless shopping experience
@@ -69,12 +71,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  logo: {
+    marginBottom: 24,
+  },
   title: {
     fontSize: 48,
     fontFamily: 'Inter-Bold',
     color: '#FFFFFF',
     marginBottom: 16,
     textAlign: 'center',
+    textShadowColor: 'rgba(59, 130, 246, 0.5)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 10,
   },
   subtitle: {
     fontSize: 18,
