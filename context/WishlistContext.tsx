@@ -60,11 +60,16 @@ export function WishlistProvider({ children }: { children: ReactNode }) {
       // Get product IDs
       const productIds = wishlistData.map(w => w.product_id);
 
-      // Fetch product details from Supabase
-      const { data: products, error: productsError } = await supabase
-        .from('products')
-        .select('*')
-        .in('id', productIds);
+      // Fetch product details from Supabase with timeout
+      const { data: products, error: productsError } = await Promise.race([
+        supabase
+          .from('products')
+          .select('*')
+          .in('id', productIds),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Wishlist load timeout')), 10000)
+        )
+      ]) as any;
 
       if (productsError) {
         console.log('⚠️ Products load error:', productsError.message);

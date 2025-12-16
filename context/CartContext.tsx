@@ -42,7 +42,19 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const cartKey = `cart_${user._id}`;
       const cartData = await AsyncStorage.getItem(cartKey);
       if (cartData) {
-        setItems(JSON.parse(cartData));
+        try {
+          const parsedCart = JSON.parse(cartData);
+          if (Array.isArray(parsedCart)) {
+            setItems(parsedCart);
+          } else {
+            throw new Error('Invalid cart data format');
+          }
+        } catch (parseError) {
+          console.error('Error parsing cart data:', parseError);
+          // Clear corrupted cart data
+          await AsyncStorage.removeItem(cartKey);
+          setItems([]);
+        }
       } else {
         setItems([]);
       }

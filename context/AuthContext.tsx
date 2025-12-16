@@ -39,13 +39,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const userDataString = await AsyncStorage.getItem('user');
       
       if (token && userDataString) {
-        const userData = JSON.parse(userDataString);
-        setUser({ ...userData, token });
+        try {
+          const userData = JSON.parse(userDataString);
+          if (userData && userData.email) {
+            setUser({ ...userData, token });
+          } else {
+            throw new Error('Invalid user data');
+          }
+        } catch (parseError) {
+          console.error('Error parsing user data:', parseError);
+          // Clear corrupted data
+          await AsyncStorage.multiRemove(['token', 'user', 'cart', 'wishlist']);
+          setUser(null);
+        }
       }
     } catch (error) {
       console.error('Error loading user:', error);
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('user');
+      // Safely clear storage on error
+      try {
+        await AsyncStorage.multiRemove(['token', 'user', 'cart', 'wishlist']);
+      } catch (clearError) {
+        console.error('Error clearing storage:', clearError);
+      }
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
