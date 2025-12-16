@@ -79,11 +79,12 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <ProductProvider>
-        <CartProvider>
-          <WishlistProvider>
-            <Stack 
+    <View style={{ flex: 1 }}>
+      <AuthProvider>
+        <ProductProvider>
+          <CartProvider>
+            <WishlistProvider>
+              <Stack 
             screenOptions={{
               headerShown: false,
               animation: 'none',
@@ -131,10 +132,11 @@ export default function RootLayout() {
             />
           </Stack>
           <StatusBar style="auto" />
-          </WishlistProvider>
-        </CartProvider>
-      </ProductProvider>
-    </AuthProvider>
+            </WishlistProvider>
+          </CartProvider>
+        </ProductProvider>
+      </AuthProvider>
+    </View>
   );
 }
 

@@ -27,10 +27,26 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingUser, setIsLoadingUser] = useState(false);
 
   // Load user from storage on mount
   useEffect(() => {
-    loadUser();
+    let mounted = true;
+    
+    async function init() {
+      if (isLoadingUser) return;
+      setIsLoadingUser(true);
+      await loadUser();
+      if (mounted) {
+        setIsLoadingUser(false);
+      }
+    }
+    
+    init();
+    
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   const loadUser = async () => {

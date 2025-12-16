@@ -24,10 +24,26 @@ const WishlistContext = createContext<WishlistContextType | undefined>(undefined
 export function WishlistProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<WishlistItem[]>([]);
   const { user } = useAuth();
+  const [isLoadingWishlist, setIsLoadingWishlist] = useState(false);
 
   // Load wishlist from backend when user changes
   useEffect(() => {
-    loadWishlist();
+    let mounted = true;
+    
+    async function init() {
+      if (isLoadingWishlist) return;
+      setIsLoadingWishlist(true);
+      await loadWishlist();
+      if (mounted) {
+        setIsLoadingWishlist(false);
+      }
+    }
+    
+    init();
+    
+    return () => {
+      mounted = false;
+    };
   }, [user?._id]);
 
   const loadWishlist = async () => {

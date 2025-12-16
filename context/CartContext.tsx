@@ -27,10 +27,26 @@ const CartContext = createContext<CartContextType | undefined>(undefined);
 export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
   const { user } = useAuth();
+  const [isLoadingCart, setIsLoadingCart] = useState(false);
 
   // Load cart from AsyncStorage when user changes
   useEffect(() => {
-    loadCart();
+    let mounted = true;
+    
+    async function init() {
+      if (isLoadingCart) return;
+      setIsLoadingCart(true);
+      await loadCart();
+      if (mounted) {
+        setIsLoadingCart(false);
+      }
+    }
+    
+    init();
+    
+    return () => {
+      mounted = false;
+    };
   }, [user?._id]);
 
   const loadCart = async () => {
