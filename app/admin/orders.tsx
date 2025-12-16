@@ -664,7 +664,10 @@ export default function OrderManagement() {
           </View>
 
           {selectedOrder && (
-            <ScrollView style={styles.modalContent}>
+            <ScrollView 
+              style={styles.modalContent}
+              contentContainerStyle={{ paddingBottom: 150 }}
+            >
               <View style={styles.detailSection}>
                 <Text style={styles.sectionTitle}>Order Information</Text>
                 <View style={styles.detailRow}>
@@ -1456,6 +1459,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#F9FAFB',
     borderRadius: 12,
     marginTop: 16,
+    marginBottom: 40,
   },
   actionButtons: {
     flexDirection: 'row',
