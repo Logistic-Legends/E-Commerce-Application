@@ -85,7 +85,7 @@ export const authService = {
         role: 'user',
         phone: userData.phone || null,
         loyalty_points: 0,
-        membership_status: 'Bronze',
+        membership_tier: 'Bronze',
       });
       
       if (error) {

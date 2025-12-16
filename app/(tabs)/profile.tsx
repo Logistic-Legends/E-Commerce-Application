@@ -343,7 +343,7 @@ export default function ProfileScreen() {
         return;
       }
 
-      const membershipTier = data.membership_status || 'Bronze';
+      const membershipTier = data.membership_tier || 'Bronze';
       const loyaltyPoints = data.loyalty_points || 0;
 
       // Calculate tier progress

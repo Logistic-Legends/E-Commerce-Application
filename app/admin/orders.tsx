@@ -571,6 +571,7 @@ export default function OrderManagement() {
       ) : (
       <ScrollView 
         style={styles.ordersList}
+        contentContainerStyle={{ paddingBottom: 120 }}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#3B82F6']} />
         }
@@ -1023,6 +1024,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F9FAFB',
+    paddingBottom: 100, // Add padding to prevent navigation overlap
   },
   header: {
     padding: 20,

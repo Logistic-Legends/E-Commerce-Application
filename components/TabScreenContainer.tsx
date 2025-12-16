@@ -10,8 +10,8 @@ export function TabScreenContainer({ children }: { children: React.ReactNode }) 
       styles.container,
       { 
         paddingBottom: Platform.select({
-          android: 70, // Adjusted for new tab bar position
-          ios: 60 + insets.bottom
+          android: 100, // Increased padding to prevent overlap with navigation
+          ios: 90 + insets.bottom
         })
       }
     ]}>
